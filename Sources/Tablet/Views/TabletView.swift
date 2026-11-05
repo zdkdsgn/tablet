@@ -76,6 +76,11 @@ struct TabletView: View {
         SettingRow(title: L("Ukázat název při stisku"), caption: L("Krátké oznámení na obrazovce")) {
             Toggle("", isOn: $labels.showOnPress).labelsHidden().toggleStyle(.switch)
         }
+        if store.tablet.enhanced {
+            SettingRow(title: L("Express View"), caption: L("Při položení prstu na tlačítka ukáže, co dělají")) {
+                Toggle("", isOn: $labels.expressView).labelsHidden().toggleStyle(.switch)
+            }
+        }
     }
 
     @ViewBuilder private var ringInspector: some View {

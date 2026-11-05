@@ -43,6 +43,7 @@
 "Duplikovat vrstvu" = "Duplicate layer";
 "Dýchání" = "Breathe";
 "Dýchání v klidu" = "Breathe when idle";
+"Express View" = "Express View";
 "Funkce aplikace" = "App function";
 "Gesta" = "Gestures";
 "Grip Pen · tlak 2048 úrovní · náklon" = "Grip Pen · 2048 pressure levels · tilt";
@@ -179,6 +180,7 @@
 "Přepínání tlačítkem je vypnuté (záložka Tlačítko)." = "Button cycling is off (Button tab).";
 "Přesný režim" = "Precision mode";
 "Přesun" = "Move";
+"Při položení prstu na tlačítka ukáže, co dělají" = "Resting a finger on the keys shows what they do";
 "Při přepnutí režimu" = "On mode change";
 "Přiblížení" = "Zoom";
 "Přiblížit" = "Zoom in";

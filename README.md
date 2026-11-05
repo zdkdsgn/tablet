@@ -53,6 +53,8 @@ a při prvním spuštění povolte v **Nastavení systému → Soukromí a zabez
 - **Předvolby:** uložená nastavení a automatické přepínání podle aplikace, která je vpředu. Spouštění po přihlášení.
 - **Dotyk:** gesta jako na trackpadu. Je hotové, ale na testovaném kusu tabletu dotyková vrstva neposílá data,
   takže to není ověřené.
+- **Express View:** lehké položení prstu na ExpressKeys ukáže u okraje obrazovky, co všechna tlačítka dělají
+  (dotyk tlačítek hlásí bajt 5 zprávy podložky).
 - **Ikona v liště:** stav připojení, režim kolečka, předvolby a rychlé přepínače.
 - **Kontrola ovladače:** jednou denně se podívá, jestli nevyšla novější verze OpenTabletDriveru.
 - **Jazyk:** čeština a angličtina podle jazyka macOS. Překlady jsou v `Resources/en.lproj`

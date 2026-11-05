@@ -6,11 +6,14 @@ final class KeyLabels: ObservableObject {
     private let d = UserDefaults.standard
     @Published var names: [String] { didSet { d.set(names, forKey: "keys.names") } }
     @Published var showOnPress: Bool { didSet { d.set(showOnPress, forKey: "keys.showOnPress") } }
+    /// Show all key assignments when a finger rests on an ExpressKey (Wacom "Express View").
+    @Published var expressView: Bool { didSet { d.set(expressView, forKey: "keys.expressView") } }
     /// Functions handled by this app instead of OpenTabletDriver ("" = none), see AppKeyAction.
     @Published var appActions: [String] { didSet { d.set(appActions, forKey: "keys.appActions") } }
 
     init() {
-        d.register(defaults: ["keys.showOnPress": true])
+        d.register(defaults: ["keys.showOnPress": true, "keys.expressView": true])
+        expressView = d.bool(forKey: "keys.expressView")
         let saved = d.stringArray(forKey: "keys.names") ?? []
         names = (0..<16).map { saved.indices.contains($0) ? saved[$0] : "" }
         showOnPress = d.bool(forKey: "keys.showOnPress")

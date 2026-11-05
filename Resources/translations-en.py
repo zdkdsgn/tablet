@@ -98,7 +98,7 @@ T = {
 "Středně rychle":"Medium","Náhled prstů na tabletu":"Preview of fingers on the tablet","Klik":"Click","Sekce":"Section","Akce":"Action",
 "%lld %% přítlaku":"%lld %% of pressure","%lld% přítlaku":"%lld% of pressure","%lld× jemnější":"%lld× finer","1 krok / %lld°":"1 step / %lld°",
 "%lld × %lld bodů":"%lld × %lld points","Klávesová zkratka %@. Kliknutím nahrajete novou.":"Shortcut %@. Click to record a new one.",
-"připojeno":"connected","nepřipojeno":"not connected",
+"připojeno":"connected","Express View":"Express View","Při položení prstu na tlačítka ukáže, co dělají":"Resting a finger on the keys shows what they do","nepřipojeno":"not connected",
 "Nejde nastavit: %@":"Cannot set: %@","Běží · %@":"Running · %@","Nová verze %@":"New version %@","Ukončit":"Quit",
 "Kolečko: %@":"Wheel: %@","Sledování vstupu":"Input Monitoring","Zpřístupnění":"Accessibility",
 "Ukazují zvolený režim":"Show the selected mode","Hledám…":"Searching…",

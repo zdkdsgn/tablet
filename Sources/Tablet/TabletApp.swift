@@ -43,6 +43,27 @@ final class AppModel: ObservableObject {
     /// Last pressed ExpressKey – the Tablet screen highlights it.
     @Published var pressedKey: Int?
     private var keysDown = [Bool](repeating: false, count: 16)
+    let expressView = ExpressView()
+
+    /// Finger resting on ExpressKeys → overlay with every key's function (the touched one highlighted).
+    private func keysTouched(_ touched: [Bool]) {
+        guard keyLabels.expressView else { return }
+        let t = Set(touched.indices.filter { touched[$0] })
+        let p = Set(keysDown.indices.filter { keysDown[$0] && $0 < store.aux.count })
+        expressView.update(touched: t, pressed: p) {
+            let rows = (0..<store.aux.count).map { i -> ExpressViewModel.Row in
+                let app = keyLabels.appAction(i)
+                return .init(id: i, name: keyLabels.name(i, for: store.aux[i]),
+                             detail: app == .none ? store.aux[i].title : L("Funkce aplikace"), symbol: nil)
+            }
+            let half = store.tablet.hasWheel ? (rows.count + 1) / 2 : rows.count
+            let ring: ExpressViewModel.Row? = store.tablet.hasWheel
+                ? .init(id: 100, name: zoom.smooth ? zoom.mode.title : L("Touch Ring"),
+                        detail: zoom.smooth ? zoom.mode.caption : store.wheelCW.title, symbol: zoom.smooth ? zoom.mode.symbol : nil)
+                : nil
+            return (Array(rows.prefix(half)), Array(rows.dropFirst(half)), ring)
+        }
+    }
 
     /// Maps the tablet to the next monitor (then all monitors), keeping the tablet area's proportions.
     func nextDisplay() {
@@ -70,7 +91,7 @@ final class AppModel: ObservableObject {
                 case .display: nextDisplay()
                 case .radial: radial.open()
                 case .none:
-                    if keyLabels.showOnPress {
+                    if keyLabels.showOnPress && !expressView.visible {
                         let a = store.aux[i]
                         hud.showKey(i, name: keyLabels.name(i, for: a), shortcut: a.title)
                     }
@@ -85,6 +106,9 @@ final class AppModel: ObservableObject {
             }
         }
         keysDown = down + Array(repeating: false, count: max(0, 16 - down.count))
+        if expressView.visible {
+            expressView.model.pressed = Set(keysDown.indices.filter { keysDown[$0] && $0 < store.aux.count })
+        }
     }
 
     @Published var accessibility = TouchEngine.accessibilityGranted
@@ -128,6 +152,7 @@ final class AppModel: ObservableObject {
         }
         lights.restore = { [weak self] in self?.updateRingLED() }
         device.onExpressKeys = { [weak self] down in self?.expressKeys(down) }
+        device.onKeyTouch = { [weak self] t in self?.keysTouched(t) }
         ringZoom.onLongPress = { [weak self] in
             guard let self else { return }
             self.lights.play()

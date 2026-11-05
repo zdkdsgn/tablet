@@ -38,6 +38,7 @@ final class DeviceMonitor: ObservableObject {
     var onRing: ((Int?) -> Void)?
     var onRingButton: ((Bool) -> Void)?
     var onExpressKeys: (([Bool]) -> Void)?
+    var onKeyTouch: (([Bool]) -> Void)?
     /// Called when the tablet (re)appears, e.g. to restore the ring LED.
     var onConnect: (() -> Void)?
 
@@ -149,6 +150,8 @@ final class DeviceMonitor: ObservableObject {
         if enhanced, bytes.first == 0x03, bytes.count >= 5 {
             onRingButton?(bytes[3] & 0x01 != 0)
             onExpressKeys?((0..<8).map { bytes[4] & (1 << $0) != 0 })
+            // byte 5: ExpressKeys that are only touched (capacitive sensing, Wacom's "Express View")
+            if bytes.count > 5 { onKeyTouch?((0..<8).map { bytes[5] & (1 << $0) != 0 }) }
             onRing?(bytes[2] & 0x80 != 0 ? Int(bytes[2] & 0x7F) : nil)
             return
         }

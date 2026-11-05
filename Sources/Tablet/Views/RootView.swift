@@ -36,6 +36,8 @@ enum Section: String, CaseIterable, Identifiable {
 }
 
 struct RootView: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var store: OTDStore
     @EnvironmentObject var device: DeviceMonitor
     @AppStorage("section") private var section: Section = .tablet
@@ -72,6 +74,7 @@ struct RootView: View {
         }
         .background(Theme.window)
         .font(.system(size: 13))
+        .onAppear { model.openMain = { [openWindow] in openWindow(id: "main") } }
     }
 }
 

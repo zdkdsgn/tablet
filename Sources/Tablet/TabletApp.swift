@@ -4,6 +4,22 @@ import ServiceManagement
 
 @MainActor
 final class AppModel: ObservableObject {
+    /// The one model, for the app delegate (Dock icon clicks).
+    static weak var shared: AppModel?
+
+    /// Opens the settings window; set from a view, which has SwiftUI's openWindow action.
+    var openMain: (() -> Void)?
+
+    /// Brings the settings window to the front, re-creating it when it was closed.
+    func showMainWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let w = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == "Tablet" }), w.canBecomeKey {
+            w.makeKeyAndOrderFront(nil)
+        } else {
+            openMain?()
+        }
+    }
+
     let store = OTDStore()
     let device = DeviceMonitor()
     let touch = TouchSettings()
@@ -64,6 +80,7 @@ final class AppModel: ObservableObject {
     }
 
     init() {
+        Self.shared = self
         device.onTouches = { [weak self] t in self?.engine.update(t) }
         device.onRing = { [weak self] p in self?.ringZoom.ring(p) }
         device.onRingButton = { [weak self] b in self?.ringZoom.button(b) }
@@ -135,6 +152,7 @@ final class AppModel: ObservableObject {
 
 @main
 struct TabletMain: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {
@@ -168,4 +186,15 @@ struct TabletMain: App {
         }
         .menuBarExtraStyle(.window)
     }
+}
+
+/// Clicking the Dock icon while the window is closed opens it again
+/// (the app keeps running in the background and in the menu bar).
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { MainActor.assumeIsolated { AppModel.shared?.showMainWindow() } }
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }

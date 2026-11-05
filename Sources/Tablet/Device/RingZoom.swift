@@ -118,6 +118,11 @@ final class RingZoom {
     private var heldKey: CGKeyCode?
     private var flags: CGEventFlags = []
     private var buttonDown = false
+    private var sessionStart = Date.distantPast
+    private var sessionNet = 0
+    private var sessionArmed = false
+    private var sessionBlocked = false
+    private var ignoreRingUntil = Date.distantPast
 
     init(settings: ZoomSettings) { self.settings = settings }
 
@@ -131,6 +136,9 @@ final class RingZoom {
         defer { buttonDown = pressed }
         guard pressed != buttonDown else { return }
         if pressed {
+            // the finger pressing the centre often brushes the ring: drop what that touch started
+            pending = 0; fraction = 0; stepAccum = 0
+            sessionBlocked = true
             longPressFired = false
             longPressTimer?.invalidate()
             let t = Timer(timeInterval: 1.5, repeats: false) { [weak self] _ in
@@ -145,6 +153,7 @@ final class RingZoom {
             return
         }
         longPressTimer?.invalidate()
+        ignoreRingUntil = Date().addingTimeInterval(0.35)
         guard !longPressFired, settings.smooth, settings.buttonCycles else { return }
         let all = settings.cycle.isEmpty ? [RingMode.zoom] : settings.cycle
         let i = all.firstIndex(of: settings.mode) ?? -1
@@ -156,13 +165,28 @@ final class RingZoom {
 
     /// Called for every pad report: `position` is 0…71 while a finger is on the ring, nil when lifted.
     func ring(_ position: Int?) {
-        guard settings.smooth, let p = position else { lastPos = nil; stepAccum = 0; return }
+        guard settings.smooth, let p = position else {
+            lastPos = nil; stepAccum = 0; sessionBlocked = false; sessionArmed = false
+            return
+        }
         defer { lastPos = p }
-        guard let l = lastPos else { return }
+        guard let l = lastPos else {          // a new touch on the ring
+            sessionStart = Date(); sessionNet = 0; sessionArmed = false
+            return
+        }
         var d = p - l
         if d > steps / 2 { d -= steps }
         if d < -steps / 2 { d += steps }
         guard d != 0 else { return }
+        // while / right after the centre button is pressed, ring touches are the pressing finger
+        if buttonDown || sessionBlocked || Date() < ignoreRingUntil { return }
+        // a touch must first move clearly (≥ 3 steps ≈ 15°, after 80 ms) before it acts:
+        // filters a finger landing on the ring edge on its way to the centre button
+        if !sessionArmed {
+            sessionNet += d
+            guard abs(sessionNet) >= 3, Date().timeIntervalSince(sessionStart) > 0.08 else { return }
+            sessionArmed = true
+        }
         if settings.invert { d = -d }   // clockwise (positive) = zoom in / bigger / redo / down
 
         switch settings.mode {

@@ -18,7 +18,7 @@ struct LightFrame {
 }
 
 enum LEDAnimation: String, CaseIterable, Identifiable {
-    case spin, pingPong, breathe, sparkle, countdown, heartbeat, police
+    case spin, pingPong, breathe, wave, sparkle, countdown, heartbeat, police
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -29,6 +29,7 @@ enum LEDAnimation: String, CaseIterable, Identifiable {
         case .countdown: return "Odpočet"
         case .heartbeat: return "Tep"
         case .police: return "Maják"
+        case .wave: return "Vlna"
         }
     }
     var symbol: String {
@@ -40,6 +41,7 @@ enum LEDAnimation: String, CaseIterable, Identifiable {
         case .countdown: return "timer"
         case .heartbeat: return "heart"
         case .police: return "light.beacon.max"
+        case .wave: return "water.waves"
         }
     }
 
@@ -53,9 +55,8 @@ enum LEDAnimation: String, CaseIterable, Identifiable {
         case .pingPong:
             let path = [0, 1, 2, 3, 2, 1]
             return (0..<4).flatMap { _ in path.map { l in f(l, 2, l == 0 || l == 3 ? 2 : 3, 0.07) } } + [f(0, 2, nil, 0.07)]
-        case .breathe:
-            let levels = [3, 0, 1, 2, 1, 0]
-            return (0..<3).flatMap { _ in levels.map { b in f(0, b, b, b == 2 ? 0.35 : 0.22) } }
+        case .breathe, .wave:
+            return []   // smooth – see LEDAnimation.smooth
         case .sparkle:
             var last = -1
             return (0..<28).map { _ in
@@ -113,38 +114,60 @@ final class LightSettings: ObservableObject {
     var cornerValue: Int { cornersEnabled ? cornerBrightness.rawValue : 3 }
 }
 
-/// Drives the ring + corner LEDs: the steady state, short effects and the idle "breathing" corners.
+/// Drives the ring + corner LEDs: the steady state, effects (stepped and smooth) and the idle
+/// "breathing" corners. Smooth fades use LEDDriver's software dimming.
 @MainActor
 final class RingLights {
-    private let device: DeviceMonitor
+    private let leds: LEDDriver
     private let settings: LightSettings
     private var timer: Timer?
-    private var idleTimer: Timer?
-    private var idleStep = 0
     private var frames: [LightFrame] = []
     private var current = 0
     var restore: (() -> Void)?
     private(set) var playing = false
 
     init(device: DeviceMonitor, settings: LightSettings) {
-        self.device = device
+        self.leds = device.leds
         self.settings = settings
     }
 
-    /// Steady state: ring LED `index` and the corners, with the user's brightness.
+    /// Steady state: ring LED `index` and the corners, with the user's brightness
+    /// (or the corners breathing smoothly, when that is on).
     func show(_ index: Int) {
         current = index
         guard !playing else { return }
-        device.setRingLED(index, brightness: settings.ringValue, corners: settings.cornerValue)
-        updateIdle()
+        if settings.breatheCorners && settings.cornersEnabled {
+            let ring = settings.enabled ? LEDDriver.level(settings.brightness.rawValue) : 0
+            let peak = LEDDriver.level(settings.cornerBrightness.rawValue)
+            let period = 4.5 / max(0.25, settings.animationSpeed)
+            leds.run(duration: nil) { t in
+                // slow sine breath with a short rest at the bottom
+                let ph = (t.truncatingRemainder(dividingBy: period)) / period
+                let v = ph < 0.8 ? (1 - cos(ph / 0.8 * 2 * .pi)) / 2 : 0
+                return (index, ring, v * peak)
+            }
+        } else {
+            leds.setStatic(led: index, ring: settings.ringValue, corners: settings.cornerValue)
+        }
     }
+
+    func updateIdle() { show(current) }
 
     func play(_ animation: LEDAnimation? = nil) {
         let a: LEDAnimation
         if let animation { a = animation }
         else if let chosen = LEDAnimation(rawValue: settings.longPressAnimation) { a = chosen }
         else { a = LEDAnimation.allCases.randomElement()! }
-        run(a.frames)
+        let speed = max(0.25, settings.animationSpeed)
+        if let smooth = a.smooth {
+            timer?.invalidate(); frames = []
+            playing = true
+            leds.run(duration: smooth.duration / speed, { t in smooth.render(t * speed) }) { [weak self] in
+                MainActor.assumeIsolated { self?.finished() }
+            }
+        } else {
+            run(a.frames)
+        }
     }
 
     /// A quick sweep from the previous LED to the new mode's LED.
@@ -166,48 +189,70 @@ final class RingLights {
 
     func welcome() {
         guard settings.welcomeAnimation, settings.enabled || settings.cornersEnabled else { return }
-        run(LEDAnimation.spin.frames)
+        play(.spin)
     }
 
     private func run(_ seq: [LightFrame]) {
         timer?.invalidate()
-        idleTimer?.invalidate(); idleTimer = nil
+        leds.stop()
         frames = seq
         playing = true
         next()
     }
 
     private func next() {
-        guard !frames.isEmpty else {
-            playing = false
-            restore?()
-            return
-        }
+        guard !frames.isEmpty else { finished(); return }
         let fr = frames.removeFirst()
-        device.setRingLED(fr.ring, brightness: fr.ringB, corners: fr.corners ?? settings.cornerValue)
+        leds.setStatic(led: fr.ring, ring: fr.ringB, corners: fr.corners ?? settings.cornerValue)
         let speed = max(0.25, settings.animationSpeed)
         timer = Timer.scheduledTimer(withTimeInterval: fr.t / speed, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.next() }
         }
     }
 
-    // MARK: idle breathing corners
-
-    func updateIdle() {
-        let want = settings.breatheCorners && settings.cornersEnabled && !playing
-        if !want { idleTimer?.invalidate(); idleTimer = nil; return }
-        guard idleTimer == nil else { return }
-        let t = Timer(timeInterval: 0.45, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.breathe() }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        idleTimer = t
+    private func finished() {
+        playing = false
+        restore?()
     }
+}
 
-    private func breathe() {
-        guard !playing else { return }
-        let levels = [0, 1, 2, 2, 1, 0, 3, 3]   // up, hold, down, rest
-        idleStep = (idleStep + 1) % levels.count
-        device.setRingLED(current, brightness: settings.ringValue, corners: levels[idleStep])
+/// Smooth (dimmed) animations: total length and what to show at time t.
+struct SmoothAnimation {
+    var duration: TimeInterval
+    var render: LEDDriver.Render
+}
+
+extension LEDAnimation {
+    var smooth: SmoothAnimation? {
+        switch self {
+        case .breathe:
+            // three slow breaths, ring and corners together
+            let period = 3.2
+            return SmoothAnimation(duration: period * 3) { t in
+                let v = (1 - cos(t / period * 2 * .pi)) / 2
+                return (0, v, v)
+            }
+        case .heartbeat:
+            // lub-dub: two quick soft pulses, then a pause
+            let period = 1.15
+            return SmoothAnimation(duration: period * 5) { t in
+                let ph = t.truncatingRemainder(dividingBy: period)
+                func bump(_ c: Double, _ w: Double) -> Double { exp(-pow((ph - c) / w, 2)) }
+                let v = min(1, bump(0.12, 0.06) + 0.75 * bump(0.36, 0.07))
+                return (0, v, v * 0.8)
+            }
+        case .wave:
+            // light flows around the ring: each LED fades in and out in turn, corners swell with it
+            let step = 0.32
+            return SmoothAnimation(duration: step * 4 * 3 + step) { t in
+                let i = Int(t / step)
+                let ph = (t - Double(i) * step) / step
+                let v = sin(ph * .pi)
+                let corners = (1 - cos(t / (step * 4) * 2 * .pi)) / 2
+                return (i % 4, v, corners * 0.7)
+            }
+        default:
+            return nil
+        }
     }
 }

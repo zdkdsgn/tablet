@@ -28,7 +28,9 @@ final class DeviceMonitor: ObservableObject {
     /// Called when the tablet (re)appears, e.g. to restore the ring LED.
     var onConnect: (() -> Void)?
 
-    private var penInterface: IOHIDDevice?
+    private var penInterface: IOHIDDevice? { didSet { leds.setDevice(penInterface) } }
+    /// LED output with software dimming (runs on its own queue).
+    let leds = LEDDriver()
     private var ledLogCount = 0
 
     /// Lights one of the four Touch Ring LEDs (0…3). Same command the Linux wacom driver uses

@@ -93,11 +93,18 @@ final class LightSettings: ObservableObject {
     @Published var animateModeChange: Bool { didSet { d.set(animateModeChange, forKey: "led.modeAnim") } }
     @Published var welcomeAnimation: Bool { didSet { d.set(welcomeAnimation, forKey: "led.welcome") } }
     @Published var breatheCorners: Bool { didSet { d.set(breatheCorners, forKey: "led.breathe") } }
+    /// Lights stay dimmed (or off) until a finger touches the ExpressKeys or the ring.
+    @Published var dimUntilTouch: Bool { didSet { d.set(dimUntilTouch, forKey: "led.dim") } }
+    /// Level while dimmed: 3 = off, 0 = low.
+    @Published var dimLevel: Int { didSet { d.set(dimLevel, forKey: "led.dimLevel") } }
 
     init() {
         d.register(defaults: ["led.enabled": true, "led.brightness": 2, "led.corners": true, "led.cornerBrightness": 0,
                               "led.egg": false, "led.longPress": "random", "led.speed": 1.0,
-                              "led.modeAnim": true, "led.welcome": false, "led.breathe": false])
+                              "led.modeAnim": true, "led.welcome": false, "led.breathe": false,
+                              "led.dim": false, "led.dimLevel": 3])
+        dimUntilTouch = d.bool(forKey: "led.dim")
+        dimLevel = d.integer(forKey: "led.dimLevel")
         enabled = d.bool(forKey: "led.enabled")
         brightness = LEDBrightness(rawValue: d.integer(forKey: "led.brightness")) ?? .high
         cornersEnabled = d.bool(forKey: "led.corners")
@@ -133,9 +140,32 @@ final class RingLights {
 
     /// Steady state: ring LED `index` and the corners, with the user's brightness
     /// (or the corners breathing smoothly, when that is on).
+    /// Lights are at full brightness: always, or (with "dim until touch") for a moment after a touch.
+    private var awake = false
+    private var sleepTimer: Timer?
+
+    /// A finger touched the keys or the ring: light up fully, dim again a few seconds later.
+    func wake() {
+        guard settings.dimUntilTouch else { return }
+        sleepTimer?.invalidate()
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.awake = false
+                self.show(self.current)
+            }
+        }
+        if !awake { awake = true; show(current) }
+    }
+
     func show(_ index: Int) {
         current = index
         guard !playing else { return }
+        if settings.dimUntilTouch && !awake {
+            leds.setStatic(led: index, ring: settings.enabled ? settings.dimLevel : 3,
+                           corners: settings.cornersEnabled ? settings.dimLevel : 3)
+            return
+        }
         if settings.breatheCorners && settings.cornersEnabled {
             let ring = settings.enabled ? LEDDriver.level(settings.brightness.rawValue) : 0
             let peak = LEDDriver.level(settings.cornerBrightness.rawValue)

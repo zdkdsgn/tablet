@@ -6,6 +6,7 @@ struct TabletView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var lights: LightSettings
     @EnvironmentObject var labels: KeyLabels
+    @EnvironmentObject var slide: SliderSettings
     static let ring = 100
     @State private var selected = 0          // ExpressKey index, or TabletView.ring
     @State private var ringTab = 0           // 0 Režimy, 1 Nastavení, 2 Tlačítko
@@ -80,6 +81,7 @@ struct TabletView: View {
             SettingRow(title: L("Express View"), caption: L("Při položení prstu na tlačítka ukáže, co dělají")) {
                 Toggle("", isOn: $labels.expressView).labelsHidden().toggleStyle(.switch)
             }
+            slideSection
         }
     }
 
@@ -203,6 +205,33 @@ struct TabletView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Akce tlačítka uprostřed").foregroundStyle(Color(hex: 0xC7C7CC))
                 ActionEditor(action: $store.wheelButton)
+            }
+        }
+    }
+
+    /// Sliding a finger along this key's strip (touch only, no press).
+    @ViewBuilder private var slideSection: some View {
+        let groups = model.keyGroups
+        if let g = groups.firstIndex(where: { $0.contains(selected) }), let first = groups[g].first, let last = groups[g].last {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(format: L("Přejetí prstem po tlačítkách %d–%d"), first + 1, last + 1)).foregroundStyle(Color(hex: 0xC7C7CC))
+                Picker("Přejetí prstem", selection: $slide.actions[g]) {
+                    ForEach(SlideAction.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                if slide.actions[g] != .none {
+                    Text(slide.actions[g].caption).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                }
+                if slide.actions[g] == .custom {
+                    HStack { Text("Nahoru").frame(width: 60, alignment: .leading); CompactRecorder(keys: $slide.customUp[g]) }
+                    HStack { Text("Dolů").frame(width: 60, alignment: .leading); CompactRecorder(keys: $slide.customDown[g]) }
+                }
+                if slide.actions[g] != .none {
+                    HStack { Text("Citlivost"); Spacer(); Text(String(format: L("%d kroky na tlačítko"), Int(slide.stepsPerKey))).foregroundStyle(Theme.secondary) }
+                    Slider(value: $slide.stepsPerKey, in: 1...4, step: 1)
+                    Toggle("Obrátit směr", isOn: $slide.invert).toggleStyle(.checkbox)
+                    Text("Jen přejeďte prstem po tlačítkách, nemačkejte je.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                }
             }
         }
     }

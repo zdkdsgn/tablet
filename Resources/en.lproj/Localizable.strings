@@ -1,5 +1,6 @@
 /* English UI. Keys are the Czech source strings. */
 
+"%d kroky na tlačítko" = "%d steps per key";
 "%lld %% přítlaku" = "%lld %% of pressure";
 "%lld × %lld bodů" = "%lld × %lld points";
 "%lld% přítlaku" = "%lld% of pressure";
@@ -36,6 +37,7 @@
 "Dlouhý stisk tlačítka uprostřed kolečka" = "Long press of the ring's centre button";
 "Dokud tlačítko držíte, pero se pohybuje jemněji." = "While you hold the key, the pen moves more finely.";
 "Dolní tlačítko pera" = "Lower pen button";
+"Dolů" = "Down";
 "Dotyk" = "Touch";
 "Dotyk funguje." = "Touch works.";
 "Dotyk prsty" = "Finger touch";
@@ -58,6 +60,8 @@
 "Intenzita" = "Brightness";
 "Invertovat výběr" = "Invert selection";
 "Jasně" = "High";
+"Jedna zkratka nahoru, druhá dolů" = "One shortcut up, another down";
+"Jen přejeďte prstem po tlačítkách, nemačkejte je." = "Just slide a finger over the keys, don’t press them.";
 "Jiskření" = "Sparkle";
 "Kapátko" = "Eyedropper";
 "Klepnutí" = "Tap";
@@ -97,7 +101,12 @@
 "Monitor" = "Display";
 "Myš" = "Mouse";
 "Měkký" = "Soft";
+"Nahoru" = "Up";
+"Nahoru Znovu, dolů Zpět" = "Up redo, down undo";
+"Nahoru přiblížit, dolů oddálit" = "Up zoom in, down zoom out";
+"Nahoru větší, dolů menší ( ] / [ )" = "Up bigger, down smaller ( ] / [ )";
 "Najít" = "Find";
+"Naplno jen při dotyku" = "Full only when touched";
 "Nastaveno v OpenTabletDriveru jiným typem akce – nechávám beze změny." = "Set in OpenTabletDriver with another action type – left unchanged.";
 "Nastavení" = "Settings";
 "Nastavit zoom klávesami" = "Set zoom shortcuts";
@@ -155,6 +164,7 @@
 "Položky kruhového menu" = "Radial menu items";
 "Položte prst na tablet – body se ukážou tady." = "Put a finger on the tablet – the points show up here.";
 "Pomalu" = "Slow";
+"Posouvá obsah nahoru a dolů" = "Scrolls content up and down";
 "Posouvání" = "Scroll";
 "Potvrdit" = "Confirm";
 "Použít" = "Apply";
@@ -173,6 +183,8 @@
 "Předvolba pojmenovaná jako aplikace se zapne sama, když ji otevřete. Jinak se použije „Výchozí“." = "A preset named like an app switches on when that app comes to the front. Otherwise “Výchozí” (Default) is used.";
 "Předvolby" = "Presets";
 "Předvolby aplikací" = "App presets";
+"Přejetí prstem" = "Finger slide";
+"Přejetí prstem po tlačítkách %d–%d" = "Finger slide over keys %d–%d";
 "Přepne, na který monitor se tablet mapuje." = "Switches which display the tablet maps to.";
 "Přepnout plochu" = "Switch space";
 "Přepínat podle aplikace" = "Switch per app";
@@ -263,9 +275,12 @@
 "Uvítání po připojení" = "Welcome on connect";
 "V aplikaci chybí ovladač (Contents/Helpers/OpenTabletDriver.Daemon). Sestavte ji znovu skriptem make-app.sh." = "The driver is missing from the app (Contents/Helpers/OpenTabletDriver.Daemon). Rebuild it with make-app.sh.";
 "V cyklu tlačítka" = "In the button cycle";
+"V klidu" = "When idle";
+"V klidu ztlumené, rozsvítí se, když sáhnete na tlačítka nebo kolečko" = "Dimmed when idle; light up when you touch the keys or the ring";
 "Velikost" = "Size";
 "Velikost štětce" = "Brush size";
 "Vlastní" = "Custom";
+"Vlastní zkratky" = "Custom shortcuts";
 "Vlna" = "Wave";
 "Vložit" = "Paste";
 "Vpřed (myš)" = "Forward (mouse)";
@@ -291,6 +306,7 @@
 "Zařadit do přepínání tlačítkem (nejvýš 4 – kolečko má 4 světýlka)" = "Include in the button cycle (max 4 – the ring has 4 lights)";
 "Zaškrtnuté režimy (nejvýš 4) střídá tlačítko uprostřed kolečka. Otáčení plátna funguje ve Photoshopu." = "The centre button cycles the ticked modes (max 4). Canvas rotation works in Photoshop.";
 "Zesvětlit/ztmavit" = "Dodge/burn";
+"Zhasnuto" = "Off";
 "Zkratka" = "Shortcut";
 "Zkratka nebo myš" = "Shortcut or mouse";
 "Zkratky přes OpenTabletDriver" = "Shortcuts via OpenTabletDriver";

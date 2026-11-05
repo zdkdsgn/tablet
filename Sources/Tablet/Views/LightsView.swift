@@ -13,6 +13,16 @@ struct LightsView: View {
                         Toggle("", isOn: $lights.enabled).labelsHidden().toggleStyle(.switch)
                     }
                     brightnessPicker($lights.brightness).disabled(!lights.enabled)
+                    SettingRow(title: L("Naplno jen při dotyku"), caption: L("V klidu ztlumené, rozsvítí se, když sáhnete na tlačítka nebo kolečko")) {
+                        Toggle("", isOn: $lights.dimUntilTouch).labelsHidden().toggleStyle(.switch)
+                    }
+                    if lights.dimUntilTouch {
+                        Picker("V klidu", selection: $lights.dimLevel) {
+                            Text("Zhasnuto").tag(3)
+                            Text("Slabě").tag(0)
+                        }
+                        .pickerStyle(.segmented)
+                    }
                 }
                 Card(title: L("Rohy plochy")) {
                     SettingRow(title: L("Rohová světýlka"), caption: L("Čtyři značky aktivní plochy – svítí všechny naráz")) {
@@ -80,6 +90,8 @@ struct LightsView: View {
         .onChange(of: lights.cornersEnabled) { _, _ in model.updateRingLED() }
         .onChange(of: lights.cornerBrightness) { _, _ in model.updateRingLED() }
         .onChange(of: lights.breatheCorners) { _, _ in model.updateRingLED() }
+        .onChange(of: lights.dimUntilTouch) { _, _ in model.updateRingLED() }
+        .onChange(of: lights.dimLevel) { _, _ in model.updateRingLED() }
     }
 
     private var speedName: String {

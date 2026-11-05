@@ -55,6 +55,8 @@ a při prvním spuštění povolte v **Nastavení systému → Soukromí a zabez
   takže to není ověřené.
 - **Express View:** lehké položení prstu na ExpressKeys ukáže u okraje obrazovky, co všechna tlačítka dělají
   (dotyk tlačítek hlásí bajt 5 zprávy podložky).
+- **Dotyková tlačítka:** přejetí prstem po čtveřici ExpressKeys funguje jako posuvník (velikost štětce,
+  historie, zoom, posouvání, vlastní zkratky). Světla můžou v klidu zhasnout a rozsvítit se až při dotyku.
 - **Ikona v liště:** stav připojení, režim kolečka, předvolby a rychlé přepínače.
 - **Kontrola ovladače:** jednou denně se podívá, jestli nevyšla novější verze OpenTabletDriveru.
 - **Jazyk:** čeština a angličtina podle jazyka macOS. Překlady jsou v `Resources/en.lproj`

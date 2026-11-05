@@ -46,10 +46,22 @@ final class AppModel: ObservableObject {
     let expressView = ExpressView()
 
     /// Finger resting on ExpressKeys → overlay with every key's function (the touched one highlighted).
+    let sliderSettings = SliderSettings()
+    private(set) lazy var slider = KeySlider(settings: sliderSettings)
+
+    /// The two touch strips: keys above and below the ring (one strip without a ring).
+    var keyGroups: [[Int]] {
+        let n = store.aux.count
+        let half = store.tablet.hasWheel ? (n + 1) / 2 : n
+        return store.tablet.hasWheel ? [Array(0..<half), Array(half..<n)] : [Array(0..<n)]
+    }
+
     private func keysTouched(_ touched: [Bool]) {
-        guard keyLabels.expressView else { return }
         let t = Set(touched.indices.filter { touched[$0] })
         let p = Set(keysDown.indices.filter { keysDown[$0] && $0 < store.aux.count })
+        if !t.isEmpty { lights.wake() }
+        slider.update(touched: t, pressed: p, groups: keyGroups)
+        guard keyLabels.expressView else { return }
         expressView.update(touched: t, pressed: p) {
             let rows = (0..<store.aux.count).map { i -> ExpressViewModel.Row in
                 let app = keyLabels.appAction(i)
@@ -137,7 +149,10 @@ final class AppModel: ObservableObject {
     init() {
         Self.shared = self
         device.onTouches = { [weak self] t in self?.engine.update(t) }
-        device.onRing = { [weak self] p in self?.ringZoom.ring(p) }
+        device.onRing = { [weak self] p in
+            if p != nil { self?.lights.wake() }
+            self?.ringZoom.ring(p)
+        }
         device.onRingButton = { [weak self] b in self?.ringZoom.button(b) }
         device.onConnect = { [weak self] in
             self?.updateRingLED()
@@ -227,6 +242,7 @@ struct TabletMain: App {
                 .environmentObject(model.keyLabels)
                 .environmentObject(model.penFilters)
                 .environmentObject(model.radialSettings)
+                .environmentObject(model.sliderSettings)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 700)
         }
@@ -244,6 +260,7 @@ struct TabletMain: App {
                 .environmentObject(model.keyLabels)
                 .environmentObject(model.penFilters)
                 .environmentObject(model.radialSettings)
+                .environmentObject(model.sliderSettings)
                 .preferredColorScheme(.dark)
         } label: {
             Image(systemName: "pencil.and.scribble")

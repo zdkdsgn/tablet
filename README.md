@@ -1,105 +1,102 @@
 # Tablet
 
-Nativní aplikace pro macOS, která vrací do života grafický tablet **Wacom Intuos Pro M (PTH-651)**
-na nových verzích macOS, pro které už Wacom ovladač nevydává. V základní podobě funguje i s dalšími tablety,
-které podporuje OpenTabletDriver.
+**English** · [Čeština](README.cs.md)
 
-*A native macOS app for the Wacom Intuos Pro M (PTH-651) – and, at a basic level, any tablet
-[OpenTabletDriver](https://github.com/OpenTabletDriver/OpenTabletDriver) supports – on current macOS.
-The driver is built in. UI in Czech and English.*
+A native macOS app that brings the **Wacom Intuos Pro M (PTH-651)** graphics tablet back to life on current
+versions of macOS, which Wacom no longer supports with a driver. At a basic level it also works with other
+tablets that OpenTabletDriver supports.
 
-## Instalace
+## Installation
 
-Stáhněte `Tablet-x.y.dmg` z [Releases](https://github.com/zdkdsgn/tablet/releases), přetáhněte Tablet do Aplikací
-a při prvním spuštění povolte v **Nastavení systému → Soukromí a zabezpečení** „Přesto otevřít“
-(aplikace není notarizovaná u Applu). Pak povolte **Zpřístupnění** a **Sledování vstupu**.
+Download `Tablet-x.y.dmg` from [Releases](https://github.com/zdkdsgn/tablet/releases) and drag Tablet into
+Applications. On first launch, open **System Settings → Privacy & Security** and click **Open Anyway**
+(the app is not notarised by Apple). Then allow Tablet under **Accessibility** and **Input Monitoring**.
 
-*Download the DMG from Releases, drag Tablet to Applications, click “Open Anyway” in Privacy & Security
-(the app is not notarised), then allow Accessibility and Input Monitoring.*
+![icon](Resources/icon.png)
 
-![ikona](Resources/icon.png)
+## How it works
 
-## Jak to funguje
+- The pen and ExpressKeys are handled by the **OpenTabletDriver** daemon, which is **bundled inside the app**
+  (`Tablet.app/Contents/Helpers/OpenTabletDriver.Daemon`). You don't need to install OpenTabletDriver separately.
+  If you have it, Tablet stops its daemon on launch and starts its own, so only one driver talks to the tablet.
+- **Tablet** replaces OpenTabletDriver's settings window: it writes `settings.json`
+  (`~/Library/Application Support/OpenTabletDriver`) and hands it straight to the daemon over its JSON-RPC socket
+  (`$TMPDIR/CoreFxPipe_OpenTabletDriver.Daemon`, method `SetSettings`).
+- The Touch Ring, its button and the lights are handled by Tablet directly through IOKit HID. It doesn't seize the
+  device, so OpenTabletDriver keeps working.
 
-- Pero a ExpressKeys obsluhuje démon **OpenTabletDriveru**, který je **přibalený přímo v aplikaci**
-  (`Tablet.app/Contents/Helpers/OpenTabletDriver.Daemon`). Samostatný OpenTabletDriver instalovat nemusíte.
-  Pokud ho máte, Tablet jeho démona při startu zastaví a spustí svůj, aby s tabletem mluvil jen jeden ovladač.
-- **Tablet** nahrazuje okno OpenTabletDriveru: zapisuje do `settings.json`
-  (`~/Library/Application Support/OpenTabletDriver`) a démonovi ho rovnou předá přes jeho JSON-RPC socket
-  (`$TMPDIR/CoreFxPipe_OpenTabletDriver.Daemon`, metoda `SetSettings`).
-- Touch Ring, jeho tlačítko a světýlka obsluhuje Tablet přímo přes IOKit HID. Zařízení si nezabírá,
-  takže OpenTabletDriver běží dál.
+## Features
 
-## Co umí
+- **Tablet:** a drawing of the tablet with labels. ExpressKeys get shortcuts recorded by pressing them (physical
+  keys, so they work with any keyboard layout, e.g. Czech QWERTZ), mouse clicks and custom names.
+  Optionally an on-screen notice appears when a key is pressed. Instead of a shortcut a key can have an
+  **app function**:
+  - **Precision mode:** while you hold the key, the pen moves more finely.
+  - **Next display:** switches which display the tablet maps to.
+  - **Radial menu:** hold the key, pick one of 8 actions with the pen and release the key.
+- **Touch Ring:** smooth zoom towards the cursor (fine scrolling with ⌥ or ⌘ depending on the app). The centre
+  button cycles the chosen modes (up to 4, one per light): Zoom, Brush size, History, Scroll and
+  Rotate canvas (Photoshop). Accidental ring touches while pressing the centre button are ignored.
+- **Lights:** ring lights and the four area corner lights (brightness, on/off, breathing) and animations.
+  An easter egg unlocks when you hold the ring's centre button.
+- **Pen:** a **pressure curve** (graph with a draggable point, Soft / Linear / Firm presets, "full pressure at"),
+  **stroke smoothing**, precision mode settings, a test pad with a pressure meter, tip threshold, pressure and
+  tilt on/off, and the pen buttons and eraser. Tablet applies the curve, smoothing and precision mode to the
+  driver's pen events (event tap), so they work in every app.
+- **Screen edges:** the pen cursor stays inside the screen and "pushes" outward at the edge, so an auto-hidden
+  Dock appears with the pen too, and the cursor doesn't flicker.
+- **Area & display:** display choice, a tablet area you move by dragging, keep aspect ratio and a left-handed mode.
+- **Presets:** saved setups that switch automatically with the app in front. Open at login.
+- **Touch:** trackpad-like gestures. Implemented, but on the tested unit the touch layer sends no data, so it is
+  not verified.
+- **Express View:** resting a finger on the ExpressKeys shows what every key does, next to the screen edge
+  (key touches are reported in byte 5 of the pad report).
+- **Touch-sensitive keys:** sliding a finger along a group of four ExpressKeys works as a slider (brush size,
+  history, zoom, scroll, custom shortcuts). The lights can stay dimmed when idle and light up when touched.
+- **Menu bar icon:** connection status, ring mode, presets and quick toggles.
+- **Driver check:** once a day it checks whether a newer OpenTabletDriver has been released.
+- **Language:** Czech and English, following the macOS language. Translations live in `Resources/en.lproj`
+  and are generated by `Resources/translations-en.py`.
 
-- **Tablet:** kresba tabletu s popisky. ExpressKeys mají zkratky nahrávané stiskem kláves (fyzické klávesy,
-  takže fungují s jakoukoli klávesnicí, třeba s českou QWERTZ), kliknutí myší a vlastní názvy.
-  Volitelně se při stisku ukáže oznámení na obrazovce. Místo zkratky můžou mít **funkci aplikace**:
-  - **Přesný režim:** dokud tlačítko držíte, pero se pohybuje jemněji.
-  - **Další monitor:** přepne mapování tabletu na další obrazovku.
-  - **Kruhové menu:** podržíte tlačítko, perem vyberete jednu z 8 akcí a tlačítko pustíte.
-- **Touch Ring:** plynulý zoom ke kurzoru (jemné posouvání s ⌥ nebo ⌘ podle aplikace). Tlačítko uprostřed přepíná
-  vybrané režimy (nejvýš 4, podle počtu světýlek): Zoom, Velikost štětce, Historie, Posouvání
-  a Otáčení plátna (Photoshop).
-- **Světla:** světýlka kolečka a rohová světýlka plochy (jas, zapnutí a vypnutí, dýchání) a animace.
-  Easter egg odemkne podržení tlačítka uprostřed kolečka.
-- **Pero:** **křivka tlaku** (graf s tažitelným bodem, předvolby Měkký, Lineární a Tvrdý, „plný tlak při“),
-  **vyhlazení tahu**, nastavení přesného režimu, zkušební plocha s ukazatelem tlaku, práh hrotu, vypnutí tlaku
-  nebo náklonu a tlačítka pera i guma. Křivku, vyhlazení a přesný režim aplikuje Tablet na události pera
-  od ovladače (event tap), takže fungují v každé aplikaci.
-- **Okraje obrazovky:** kurzor pera zůstane uvnitř obrazovky a na okraji „tlačí“ ven, takže se automaticky
-  skrytý Dock vysune i perem.
-- **Plocha a monitor:** výběr monitoru, plocha tabletu posouvaná tažením, zachování poměru stran a režim pro leváky.
-- **Předvolby:** uložená nastavení a automatické přepínání podle aplikace, která je vpředu. Spouštění po přihlášení.
-- **Dotyk:** gesta jako na trackpadu. Je hotové, ale na testovaném kusu tabletu dotyková vrstva neposílá data,
-  takže to není ověřené.
-- **Express View:** lehké položení prstu na ExpressKeys ukáže u okraje obrazovky, co všechna tlačítka dělají
-  (dotyk tlačítek hlásí bajt 5 zprávy podložky).
-- **Dotyková tlačítka:** přejetí prstem po čtveřici ExpressKeys funguje jako posuvník (velikost štětce,
-  historie, zoom, posouvání, vlastní zkratky). Světla můžou v klidu zhasnout a rozsvítit se až při dotyku.
-- **Ikona v liště:** stav připojení, režim kolečka, předvolby a rychlé přepínače.
-- **Kontrola ovladače:** jednou denně se podívá, jestli nevyšla novější verze OpenTabletDriveru.
-- **Jazyk:** čeština a angličtina podle jazyka macOS. Překlady jsou v `Resources/en.lproj`
-  a generuje je skript `Resources/translations-en.py`.
+### Supported tablets
 
-### Podporované tablety
-
-| Úroveň | Tablety | Funkce |
+| Level | Tablets | Features |
 |---|---|---|
-| Rozšířená | Intuos Pro 2013 (PTH-451/651/851), Intuos5 (PTK-450/650/850, PTH-450/650/850) | všechno výše |
-| Základní | ostatní tablety podporované OpenTabletDriverem | pero, křivka tlaku, vyhlazení, plocha, monitor, ExpressKeys a kolečko přes OpenTabletDriver, předvolby |
+| Enhanced | Intuos Pro 2013 (PTH-451/651/851), Intuos5 (PTK-450/650/850, PTH-450/650/850) | everything above |
+| Basic | other tablets supported by OpenTabletDriver | pen, pressure curve, smoothing, area, display, ExpressKeys and wheel through OpenTabletDriver, presets |
 
-Ověřené je to jen s PTH-651. Hlášení o dalších tabletech jsou vítaná.
+Only verified with the PTH-651. Reports about other tablets are welcome.
 
-## Sestavení
+## Building
 
-Potřebujete macOS 14 nebo novější a Xcode (nebo Command Line Tools se Swiftem 5.10 a novějším).
+You need macOS 14 or later and Xcode (or the Command Line Tools with Swift 5.10 or later).
 
 ```bash
-./make-app.sh            # stáhne a ověří OpenTabletDriver (jen poprvé) a sestaví build/Tablet.app
-./make-app.sh --install  # a zkopíruje ji do /Applications
-./make-dmg.sh            # instalační build/Tablet-<verze>.dmg
+./make-app.sh            # downloads and verifies OpenTabletDriver (first time only) and builds build/Tablet.app
+./make-app.sh --install  # and copies it to /Applications
+./make-dmg.sh            # installer build/Tablet-<version>.dmg
 ```
 
-Aplikace je podepsaná ad hoc, s požadavkem na podpis vázaným jen na identifikátor balíčku. Díky tomu si macOS
-pamatuje udělená oprávnění i po novém sestavení. Identifikátor si můžete změnit v `make-app.sh`.
+The app is ad-hoc signed with a designated requirement bound only to the bundle identifier, so macOS keeps the
+granted permissions across rebuilds. You can change the identifier in `make-app.sh`.
 
-### Oprávnění (Nastavení systému → Soukromí a zabezpečení)
+### Permissions (System Settings → Privacy & Security)
 
-- **Zpřístupnění:** posílání událostí (zoom, klávesy, kurzor).
-- **Sledování vstupu:** čtení kolečka, tlačítek a dotyku z tabletu.
+- **Accessibility:** posting events (zoom, keys, cursor).
+- **Input Monitoring:** reading the ring, keys and touch from the tablet.
 
-## Poznámky k hardwaru (PTH-651, USB 056A:0315)
+## Hardware notes (PTH-651, USB 056A:0315)
 
-- Zprávy podložky (report ID 3, rozhraní pera 0xFF0D): bajt 2 = Touch Ring (bit 7 = prst na kolečku,
-  hodnoty 0–71), bajt 3 bit 0 = tlačítko uprostřed, bajt 4 = ExpressKeys.
-- Světýlka: feature report `0x20`, bajt 1 = `jas_rohů << 4 | jas_kolečka << 2 | světýlko`. Jas 0 je slabě,
-  1 středně, 2 jasně a 3 vypnuto. Stejně to dělá ovladač `wacom` v Linuxu.
-- Dotyk: rozhraní 0xFF00, 64bajtové zprávy (report ID 2).
+- Pad reports (report ID 3, pen interface 0xFF0D): byte 2 = Touch Ring (bit 7 = finger on the ring,
+  values 0–71), byte 3 bit 0 = centre button, byte 4 = ExpressKeys pressed, byte 5 = ExpressKeys touched.
+- Lights: feature report `0x20`, byte 1 = `corner_brightness << 4 | ring_brightness << 2 | led`. Brightness 0 is low,
+  1 medium, 2 high and 3 off. This is what Linux's `wacom` driver does too. The LEDs re-apply late after each
+  report, so fast dithering between levels flickers; fades are shown as stepped levels.
+- Touch: interface 0xFF00, 64-byte reports (report ID 2).
 
 ## Licence
 
-Kód aplikace je pod licencí MIT. [OpenTabletDriver](https://github.com/OpenTabletDriver/OpenTabletDriver) je samostatný projekt
-pod licencí LGPL-3.0. Repozitář ho neobsahuje: `make-app.sh` stáhne jeho oficiální vydání (verze a SHA-256
-jsou uvedené ve skriptu) a přibalí do aplikace nezměněný démon spolu s jeho licencí
-(`Contents/Resources/OpenTabletDriver-LICENSE.txt`). Démona jde kdykoli nahradit jinou verzí.
+The app's code is MIT-licensed. [OpenTabletDriver](https://github.com/OpenTabletDriver/OpenTabletDriver) is a separate
+project under LGPL-3.0. This repository doesn't contain it: `make-app.sh` downloads its official release (version and
+SHA-256 are in the script) and bundles the unmodified daemon together with its licence
+(`Contents/Resources/OpenTabletDriver-LICENSE.txt`). The daemon can be replaced with another version at any time.

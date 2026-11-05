@@ -9,17 +9,17 @@ struct LightsView: View {
         HStack(alignment: .top, spacing: 20) {
             VStack(spacing: 20) {
                 Card(title: "Touch Ring") {
-                    SettingRow(title: "Světýlka kolečka", caption: zoom.smooth ? "Ukazují zvolený režim kolečka" : "Svítí první světýlko") {
+                    SettingRow(title: L("Světýlka kolečka"), caption: zoom.smooth ? L("Ukazují zvolený režim kolečka") : L("Svítí první světýlko")) {
                         Toggle("", isOn: $lights.enabled).labelsHidden().toggleStyle(.switch)
                     }
                     brightnessPicker($lights.brightness).disabled(!lights.enabled)
                 }
-                Card(title: "Rohy plochy") {
-                    SettingRow(title: "Rohová světýlka", caption: "Čtyři značky aktivní plochy – svítí všechny naráz") {
+                Card(title: L("Rohy plochy")) {
+                    SettingRow(title: L("Rohová světýlka"), caption: L("Čtyři značky aktivní plochy – svítí všechny naráz")) {
                         Toggle("", isOn: $lights.cornersEnabled).labelsHidden().toggleStyle(.switch)
                     }
                     brightnessPicker($lights.cornerBrightness).disabled(!lights.cornersEnabled)
-                    SettingRow(title: "Dýchání v klidu", caption: "Rohy pomalu pulzují") {
+                    SettingRow(title: L("Dýchání v klidu"), caption: L("Rohy pomalu pulzují")) {
                         Toggle("", isOn: $lights.breatheCorners).labelsHidden().toggleStyle(.switch)
                     }
                     .disabled(!lights.cornersEnabled)
@@ -27,20 +27,20 @@ struct LightsView: View {
                 LightsPreview()
             }
             VStack(spacing: 20) {
-                Card(title: "Animace") {
+                Card(title: L("Animace")) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack { Text("Rychlost animací"); Spacer(); Text(speedName).foregroundStyle(Theme.secondary) }
                         Slider(value: $lights.animationSpeed, in: 0.5...2, step: 0.25)
                     }
-                    SettingRow(title: "Při přepnutí režimu", caption: "Světlo oběhne kolečko a zastaví se na novém režimu") {
+                    SettingRow(title: L("Při přepnutí režimu"), caption: L("Světlo oběhne kolečko a zastaví se na novém režimu")) {
                         Toggle("", isOn: $lights.animateModeChange).labelsHidden().toggleStyle(.switch)
                     }
-                    SettingRow(title: "Uvítání po připojení", caption: "Kolotoč, když tablet připojíte") {
+                    SettingRow(title: L("Uvítání po připojení"), caption: L("Kolotoč, když tablet připojíte")) {
                         Toggle("", isOn: $lights.welcomeAnimation).labelsHidden().toggleStyle(.switch)
                     }
                 }
                 if lights.easterEggUnlocked {
-                    Card(title: "Světelná show", trailing: AnyView(Image(systemName: "sparkles").foregroundStyle(Theme.accent))) {
+                    Card(title: L("Světelná show"), trailing: AnyView(Image(systemName: "sparkles").foregroundStyle(Theme.accent))) {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Dlouhý stisk tlačítka uprostřed kolečka").foregroundStyle(Color(hex: 0xC7C7CC))
                             Picker("Dlouhý stisk", selection: $lights.longPressAnimation) {
@@ -64,7 +64,7 @@ struct LightsView: View {
                         Text("Klikněte na animaci a sledujte tablet.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                     }
                 } else {
-                    Card(title: "Světelná show") {
+                    Card(title: L("Světelná show")) {
                         HStack(spacing: 10) {
                             Image(systemName: "lock.fill").foregroundStyle(Theme.secondary)
                             Text("Skryté. Zkuste chvíli podržet tlačítko uprostřed kolečka…").foregroundStyle(Theme.secondary)
@@ -83,7 +83,7 @@ struct LightsView: View {
     }
 
     private var speedName: String {
-        switch lights.animationSpeed { case ..<0.8: return "Pomalu"; case ..<1.3: return "Normálně"; default: return "Rychle" }
+        switch lights.animationSpeed { case ..<0.8: return L("Pomalu"); case ..<1.3: return L("Normálně"); default: return L("Rychle") }
     }
 
     private func brightnessPicker(_ b: Binding<LEDBrightness>) -> some View {
@@ -127,6 +127,6 @@ private struct LightsPreview: View {
         .accessibilityHidden(true)
     }
 
-    private var litRing: Int { lights.enabled ? (zoom.smooth ? zoom.mode.rawValue : 0) : -1 }
+    private var litRing: Int { lights.enabled ? (zoom.smooth ? zoom.ledIndex : 0) : -1 }
     private func opacity(_ b: LEDBrightness) -> Double { [0.45, 0.7, 1.0][b.rawValue] }
 }

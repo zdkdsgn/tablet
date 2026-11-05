@@ -63,11 +63,11 @@ enum KeyNames {
     }
 
     private static let specialGlyph: [String: String] = [
-        "Space": "Mezerník", "Enter": "↩", "Escape": "esc", "Tab": "⇥", "Backspace": "⌫",
+        "Space": L("Mezerník"), "Enter": "↩", "Escape": "esc", "Tab": "⇥", "Backspace": "⌫",
         "Delete": "⌦", "Up": "↑", "Down": "↓", "Left": "←", "Right": "→", "Home": "↖",
         "End": "↘", "PageUp": "⇞", "PageDown": "⇟", "Add": "num +", "Multiply": "num ×",
         "Divide": "num ÷", "Decimal": "num ,", "KeypadEqual": "num =", "Clear": "⌧",
-        "Mute": "Ztlumit", "VolumeUp": "Hlasitost +", "VolumeDown": "Hlasitost −", "Help": "Nápověda",
+        "Mute": L("Ztlumit"), "VolumeUp": L("Hlasitost +"), "VolumeDown": L("Hlasitost −"), "Help": L("Nápověda"),
     ]
 
     /// What the key prints with the *current* keyboard layout (so "Y" shows "Z" on Czech QWERTZ).

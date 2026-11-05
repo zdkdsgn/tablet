@@ -13,7 +13,7 @@ final class AppModel: ObservableObject {
     /// Brings the settings window to the front, re-creating it when it was closed.
     func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
-        if let w = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == "Tablet" }), w.canBecomeKey {
+        if let w = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == L("Tablet") }), w.canBecomeKey {
             w.makeKeyAndOrderFront(nil)
         } else {
             openMain?()
@@ -31,29 +31,60 @@ final class AppModel: ObservableObject {
 
     /// LED shows the ring mode while this app controls the ring, else the first LED (or nothing when lights are off).
     func updateRingLED() {
-        lights.show(zoom.smooth ? zoom.mode.rawValue : 0)
+        lights.show(zoom.smooth ? zoom.ledIndex : 0)
     }
     private(set) lazy var ringZoom = RingZoom(settings: zoom)
     let keyLabels = KeyLabels()
     /// Keeps the pen cursor inside the screen and lets it push the auto-hidden Dock out.
-    let edgeFix = EdgeFix()
+    let penFilters = PenFilters()
+    let radialSettings = RadialSettings()
+    private(set) lazy var radial = RadialMenu(settings: radialSettings)
+    private(set) lazy var edgeFix = PenTap(filters: penFilters)
     /// Last pressed ExpressKey – the Tablet screen highlights it.
     @Published var pressedKey: Int?
-    private var keysDown = [Bool](repeating: false, count: 8)
+    private var keysDown = [Bool](repeating: false, count: 16)
+
+    /// Maps the tablet to the next monitor (then all monitors), keeping the tablet area's proportions.
+    func nextDisplay() {
+        let screens = ScreenInfo.all()
+        guard !screens.isEmpty else { return }
+        var options = screens.map { ($0.name, $0.otd) }
+        if screens.count > 1 { options.append(("Všechny monitory", ScreenInfo.union(screens))) }
+        let cur = store.displayArea
+        let i = options.firstIndex { abs($0.1.width - cur.width) < 1 && abs($0.1.x - cur.x) < 1 && abs($0.1.y - cur.y) < 1 } ?? -1
+        let next = options[(i + 1) % options.count]
+        store.displayArea = next.1
+        if UserDefaults.standard.object(forKey: "area.lockAspect") as? Bool ?? true {
+            store.fitTabletArea()
+        }
+        hud.showMessage(symbol: "display", title: next.0, subtitle: L("Tablet se mapuje sem"))
+    }
 
     private func expressKeys(_ down: [Bool]) {
-        for i in 0..<min(8, down.count) where down[i] != keysDown[i] {
+        for i in 0..<min(store.aux.count, down.count) where down[i] != keysDown[i] {
+            let app = keyLabels.appAction(i)
             if down[i] {
                 pressedKey = i
-                if keyLabels.showOnPress {
-                    let a = store.aux[i]
-                    hud.showKey(i, name: keyLabels.name(i, for: a), shortcut: a.title)
+                switch app {
+                case .precision: penFilters.precisionActive = true
+                case .display: nextDisplay()
+                case .radial: radial.open()
+                case .none:
+                    if keyLabels.showOnPress {
+                        let a = store.aux[i]
+                        hud.showKey(i, name: keyLabels.name(i, for: a), shortcut: a.title)
+                    }
                 }
-            } else if pressedKey == i {
-                pressedKey = nil
+            } else {
+                if pressedKey == i { pressedKey = nil }
+                switch app {
+                case .precision: penFilters.precisionActive = false
+                case .radial: radial.close(perform: true)
+                default: break
+                }
             }
         }
-        keysDown = Array(down.prefix(8))
+        keysDown = down + Array(repeating: false, count: max(0, 16 - down.count))
     }
 
     @Published var accessibility = TouchEngine.accessibilityGranted
@@ -75,7 +106,7 @@ final class AppModel: ObservableObject {
         }
         launchAtLogin = SMAppService.mainApp.status == .enabled
         if SMAppService.mainApp.status == .requiresApproval {
-            loginItemError = "Povolte Tablet v Nastavení systému → Obecné → Položky otevírané při přihlášení."
+            loginItemError = L("Povolte Tablet v Nastavení systému → Obecné → Položky otevírané při přihlášení.")
         }
     }
 
@@ -90,9 +121,10 @@ final class AppModel: ObservableObject {
         }
         ringZoom.onModeChange = { [weak self] m in
             guard let self else { return }
-            let count = RingMode.allCases.count
-            self.lights.modeChanged(to: m.rawValue, from: (m.rawValue + count - 1) % count)
-            self.hud.show(m)
+            let n = max(1, self.zoom.cycle.count)
+            let idx = self.zoom.ledIndex
+            self.lights.modeChanged(to: idx, from: (idx + n - 1) % n)
+            self.hud.show(m, dots: n, active: idx)
         }
         lights.restore = { [weak self] in self?.updateRingLED() }
         device.onExpressKeys = { [weak self] down in self?.expressKeys(down) }
@@ -101,6 +133,8 @@ final class AppModel: ObservableObject {
             self.lights.play()
             if !self.lightSettings.easterEggUnlocked { self.lightSettings.easterEggUnlocked = true }
         }
+        device.setTarget(store.tablet)
+        store.onTabletChange = { [weak self] t in self?.device.setTarget(t) }
         device.start()
         // first run: start at login by default (the user can turn it off in Předvolby)
         if !UserDefaults.standard.bool(forKey: "loginItemConfigured") {
@@ -109,6 +143,7 @@ final class AppModel: ObservableObject {
         }
         if !accessibility { TouchEngine.requestAccessibility() }
         store.startDaemon()
+        store.checkDriverUpdate()
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -165,6 +200,8 @@ struct TabletMain: App {
                 .environmentObject(model.zoom)
                 .environmentObject(model.lightSettings)
                 .environmentObject(model.keyLabels)
+                .environmentObject(model.penFilters)
+                .environmentObject(model.radialSettings)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 700)
         }
@@ -180,6 +217,8 @@ struct TabletMain: App {
                 .environmentObject(model.zoom)
                 .environmentObject(model.lightSettings)
                 .environmentObject(model.keyLabels)
+                .environmentObject(model.penFilters)
+                .environmentObject(model.radialSettings)
                 .preferredColorScheme(.dark)
         } label: {
             Image(systemName: "pencil.and.scribble")

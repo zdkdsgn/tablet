@@ -2,22 +2,24 @@ import AppKit
 
 /// What the Touch Ring does when this app controls it.
 enum RingMode: Int, CaseIterable, Identifiable {
-    case zoom, brush, history, scroll
+    case zoom, brush, history, scroll, rotate
     var id: Int { rawValue }
     var title: String {
         switch self {
-        case .zoom: return "Zoom"
-        case .brush: return "Velikost štětce"
-        case .history: return "Historie"
-        case .scroll: return "Posouvání"
+        case .zoom: return L("Zoom")
+        case .brush: return L("Velikost štětce")
+        case .history: return L("Historie")
+        case .scroll: return L("Posouvání")
+        case .rotate: return L("Otáčení plátna")
         }
     }
     var caption: String {
         switch self {
-        case .zoom: return "Plynule ke kurzoru"
-        case .brush: return "Klávesy [ a ]"
-        case .history: return "Zpět ⌘Z / Znovu ⇧⌘Z"
-        case .scroll: return "Plynulé posouvání obsahu"
+        case .zoom: return L("Plynule ke kurzoru")
+        case .brush: return L("Klávesy [ a ]")
+        case .history: return L("Zpět ⌘Z / Znovu ⇧⌘Z")
+        case .scroll: return L("Plynulé posouvání obsahu")
+        case .rotate: return L("Photoshop: drží R a otáčí pohledem")
         }
     }
     var symbol: String {
@@ -26,6 +28,7 @@ enum RingMode: Int, CaseIterable, Identifiable {
         case .brush: return "paintbrush.pointed"
         case .history: return "clock.arrow.circlepath"
         case .scroll: return "arrow.up.and.down"
+        case .rotate: return "rotate.right"
         }
     }
 }
@@ -44,6 +47,20 @@ final class ZoomSettings: ObservableObject {
     /// Centre button cycles the ring modes.
     @Published var buttonCycles: Bool { didSet { d.set(buttonCycles, forKey: "ring.buttonCycles") } }
     @Published var mode: RingMode { didSet { d.set(mode.rawValue, forKey: "ring.mode") } }
+    /// Modes the centre button cycles through (max 4 – the ring has four LEDs).
+    @Published var cycle: [RingMode] { didSet { d.set(cycle.map(\.rawValue), forKey: "ring.cycle") } }
+
+    /// LED for the current mode: its position in the cycle.
+    var ledIndex: Int { (cycle.firstIndex(of: mode) ?? 0) % 4 }
+
+    func toggleInCycle(_ m: RingMode) {
+        if let i = cycle.firstIndex(of: m) {
+            if cycle.count > 1 { cycle.remove(at: i) }
+        } else if cycle.count < 4 {
+            cycle.append(m)
+            cycle.sort { $0.rawValue < $1.rawValue }
+        }
+    }
 
     init() {
         d.register(defaults: ["zoom.smooth": false, "zoom.modifier": "auto", "zoom.speed": 5.0,
@@ -55,6 +72,8 @@ final class ZoomSettings: ObservableObject {
         invert = d.bool(forKey: "zoom.invert")
         buttonCycles = d.bool(forKey: "ring.buttonCycles")
         mode = RingMode(rawValue: d.integer(forKey: "ring.mode")) ?? .zoom
+        let c = (d.array(forKey: "ring.cycle") as? [Int])?.compactMap(RingMode.init(rawValue:)) ?? []
+        cycle = c.isEmpty ? [.zoom, .brush, .history, .scroll] : c
     }
 
     /// Which key zooms with the scroll wheel in the app in front.
@@ -70,8 +89,8 @@ final class ZoomSettings: ObservableObject {
         case "alt": return "⌥ Option"
         case "cmd": return "⌘ Command"
         case "ctrl": return "⌃ Control"
-        case "none": return "Bez klávesy"
-        default: return "Automaticky"
+        case "none": return L("Bez klávesy")
+        default: return L("Automaticky")
         }
     }
 }
@@ -127,9 +146,10 @@ final class RingZoom {
         }
         longPressTimer?.invalidate()
         guard !longPressFired, settings.smooth, settings.buttonCycles else { return }
-        let all = RingMode.allCases
-        settings.mode = all[(settings.mode.rawValue + 1) % all.count]
-        finish()
+        let all = settings.cycle.isEmpty ? [RingMode.zoom] : settings.cycle
+        let i = all.firstIndex(of: settings.mode) ?? -1
+        settings.mode = all[(i + 1) % all.count]
+        finish(); endRotate()
         stepAccum = 0
         onModeChange?(settings.mode)
     }
@@ -155,11 +175,65 @@ final class RingZoom {
                 let code = up ? (KeyNames.keyCode(typing: "]") ?? 30) : (KeyNames.keyCode(typing: "[") ?? 33)
                 self.tapKey(CGKeyCode(code), flags: [])
             }
+        case .rotate:
+            rotate(by: Double(d) * 4)
         case .history:
             keySteps(d, every: 5) { up in
                 self.tapKey(CGKeyCode(KeyNames.keyCode(typing: "z") ?? 6), flags: up ? [.maskCommand, .maskShift] : [.maskCommand])
             }
         }
+    }
+
+    // MARK: canvas rotation (Photoshop: hold R and drag around a pivot)
+
+    private var rotating = false
+    private var pivot = CGPoint.zero
+    private var angle = 0.0
+    private var rotateTimer: Timer?
+    private let radius = 120.0
+
+    private func rotate(by degrees: Double) {
+        let r = CGKeyCode(KeyNames.keyCode(typing: "r") ?? 15)
+        if !rotating {
+            pivot = CGEvent(source: nil)?.location ?? .zero
+            angle = 0
+            tapKeyDown(r, true)
+            postMouse(.leftMouseDown, at: point(angle))
+            rotating = true
+        }
+        angle += degrees
+        postMouse(.leftMouseDragged, at: point(angle))
+        rotateTimer?.invalidate()
+        rotateTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.endRotate() }
+        }
+    }
+
+    private func endRotate() {
+        rotateTimer?.invalidate(); rotateTimer = nil
+        guard rotating else { return }
+        rotating = false
+        postMouse(.leftMouseUp, at: point(angle))
+        tapKeyDown(CGKeyCode(KeyNames.keyCode(typing: "r") ?? 15), false)
+        CGWarpMouseCursorPosition(pivot)
+    }
+
+    private func point(_ deg: Double) -> CGPoint {
+        let a = deg * .pi / 180
+        return CGPoint(x: pivot.x + cos(a) * radius, y: pivot.y + sin(a) * radius)
+    }
+
+    private func postMouse(_ type: CGEventType, at p: CGPoint) {
+        guard let e = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { return }
+        e.setIntegerValueField(.eventSourceUserData, value: TouchEngine.marker)
+        e.post(tap: .cghidEventTap)
+    }
+
+    private func tapKeyDown(_ code: CGKeyCode, _ down: Bool) {
+        guard let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else { return }
+        e.flags = []
+        e.setIntegerValueField(.eventSourceUserData, value: TouchEngine.marker)
+        e.post(tap: .cghidEventTap)
     }
 
     // MARK: key-step modes

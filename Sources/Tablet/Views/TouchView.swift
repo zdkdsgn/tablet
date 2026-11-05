@@ -8,18 +8,18 @@ struct TouchView: View {
     var body: some View {
         VStack(spacing: 16) {
             if !device.inputAccess {
-                Banner(text: "Aplikace potřebuje oprávnění Sledování vstupu, aby četla prsty z tabletu.", button: "Otevřít nastavení") {
+                Banner(text: L("Aplikace potřebuje oprávnění Sledování vstupu, aby četla prsty z tabletu."), button: L("Otevřít nastavení")) {
                     AppModel.openPrivacy("Privacy_ListenEvent")
                 }
             }
             if !model.accessibility {
-                Banner(text: "Pro pohyb kurzoru a gesta zapněte aplikaci Tablet v Zpřístupnění.", button: "Otevřít nastavení") {
+                Banner(text: L("Pro pohyb kurzoru a gesta zapněte aplikaci Tablet v Zpřístupnění."), button: L("Otevřít nastavení")) {
                     TouchEngine.requestAccessibility()
                     AppModel.openPrivacy("Privacy_Accessibility")
                 }
             }
             HStack(alignment: .top, spacing: 20) {
-                Card(title: "Živý náhled", trailing: AnyView(Toggle("Dotyk zapnutý", isOn: $touch.enabled).toggleStyle(.switch))) {
+                Card(title: L("Živý náhled"), trailing: AnyView(Toggle("Dotyk zapnutý", isOn: $touch.enabled).toggleStyle(.switch))) {
                     LiveTouches(touches: device.touches)
                         .frame(maxWidth: .infinity, minHeight: 300)
                     Text(statusText).font(.system(size: 12)).foregroundStyle(Theme.secondary)
@@ -52,14 +52,14 @@ struct TouchView: View {
     }
 
     private var statusText: String {
-        if !device.connected { return "Tablet není připojený." }
-        if !device.inputAccess { return "Čekám na oprávnění Sledování vstupu." }
-        if device.touchReportsSeen == 0 { return "Položte prst na tablet – body se ukážou tady." }
-        return device.touches.isEmpty ? "Dotyk funguje." : "Prstů na tabletu: \(device.touches.count)"
+        if !device.connected { return L("Tablet není připojený.") }
+        if !device.inputAccess { return L("Čekám na oprávnění Sledování vstupu.") }
+        if device.touchReportsSeen == 0 { return L("Položte prst na tablet – body se ukážou tady.") }
+        return device.touches.isEmpty ? L("Dotyk funguje.") : "Prstů na tabletu: \(device.touches.count)"
     }
 
     private var speedName: String {
-        switch touch.speed { case ..<4: return "Pomalu"; case ..<8: return "Středně rychle"; default: return "Rychle" }
+        switch touch.speed { case ..<4: return L("Pomalu"); case ..<8: return L("Středně rychle"); default: return L("Rychle") }
     }
 
     private func gesture(_ title: String, _ caption: String, _ on: Binding<Bool>) -> some View {

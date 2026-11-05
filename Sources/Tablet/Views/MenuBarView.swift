@@ -13,7 +13,7 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
 
-            if zoom.smooth {
+            if zoom.smooth && store.tablet.enhanced {
                 section("Touch Ring") {
                     HStack(spacing: 6) {
                         ForEach(RingMode.allCases) { m in
@@ -103,7 +103,7 @@ struct MenuBarView: View {
         HStack(spacing: 12) {
             TabletGlyph()
             VStack(alignment: .leading, spacing: 3) {
-                Text("Intuos Pro M").font(.system(size: 14, weight: .semibold))
+                Text(store.tablet.displayName).font(.system(size: 14, weight: .semibold)).lineLimit(1)
                 HStack(spacing: 6) {
                     Circle().fill(ok ? Theme.ok : Theme.warn).frame(width: 7, height: 7)
                     Text(status).font(.system(size: 12)).foregroundStyle(Theme.secondary)
@@ -147,8 +147,8 @@ struct MenuBarView: View {
     private var ok: Bool { device.connected && store.daemonRunning }
 
     private var status: String {
-        if !device.connected { return "Nepřipojeno" }
-        if !store.daemonRunning { return "Ovladač neběží" }
-        return "Připojeno přes USB"
+        if !device.connected { return L("Nepřipojeno") }
+        if !store.daemonRunning { return L("Ovladač neběží") }
+        return L("Připojeno přes USB")
     }
 }

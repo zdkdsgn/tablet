@@ -31,6 +31,7 @@ cp "$OTD_CACHE/LICENSE" "$APP/Contents/Resources/OpenTabletDriver-LICENSE.txt"
 cp .build/release/Tablet "$APP/Contents/MacOS/Tablet"
 [[ -f Resources/AppIcon.icns ]] || { swift Resources/make-icon.swift Resources/AppIcon.iconset && iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns; }
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp -R Resources/en.lproj Resources/cs.lproj "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -43,15 +44,18 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>Tablet</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>OTDVersion</key><string>OTD_VERSION_PLACEHOLDER</string>
+  <key>CFBundleShortVersionString</key><string>1.1</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>CFBundleDevelopmentRegion</key><string>cs</string>
+  <key>CFBundleLocalizations</key><array><string>cs</string><string>en</string></array>
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
 </dict>
 </plist>
 PLIST
+sed -i '' "s/OTD_VERSION_PLACEHOLDER/$OTD_VERSION/" "$APP/Contents/Info.plist"
 
 # Ad-hoc signature with a designated requirement on the bundle id only, so macOS keeps the
 # Input Monitoring / Accessibility permissions across rebuilds (default ad-hoc pins the exact build).

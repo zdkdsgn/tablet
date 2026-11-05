@@ -9,7 +9,7 @@ struct AreaView: View {
     var body: some View {
         VStack(spacing: 20) {
             HStack(alignment: .top, spacing: 20) {
-                Card(title: "Obrazovka") {
+                Card(title: L("Obrazovka")) {
                     Picker("Monitor", selection: displayChoice) {
                         ForEach(screens.indices, id: \.self) { i in Text(screens[i].name).tag(i) }
                         if screens.count > 1 { Text("Všechny").tag(-1) }
@@ -20,8 +20,8 @@ struct AreaView: View {
                     Text("\(Int(store.displayArea.width)) × \(Int(store.displayArea.height)) bodů")
                         .font(.system(size: 12)).foregroundStyle(Theme.secondary)
                 }
-                Card(title: "Plocha tabletu", trailing: AnyView(Text("Táhněte obdélník").font(.system(size: 12)).foregroundStyle(Theme.secondary))) {
-                    TabletAreaEditor(area: $store.tabletArea)
+                Card(title: L("Plocha tabletu"), trailing: AnyView(Text("Táhněte obdélník").font(.system(size: 12)).foregroundStyle(Theme.secondary))) {
+                    TabletAreaEditor(area: $store.tabletArea, full: store.fullTablet)
                         .frame(maxWidth: .infinity, minHeight: 240)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -34,14 +34,14 @@ struct AreaView: View {
                 }
             }
             HStack(spacing: 12) {
-                SettingRow(title: "Zachovat poměr stran", caption: "Kruh na tabletu = kruh na obrazovce") {
+                SettingRow(title: L("Zachovat poměr stran"), caption: L("Kruh na tabletu = kruh na obrazovce")) {
                     Toggle("", isOn: $lockAspect).labelsHidden().toggleStyle(.switch)
                 }
-                SettingRow(title: "Pro leváky", caption: "Otočit tablet o 180°") {
+                SettingRow(title: L("Pro leváky"), caption: L("Otočit tablet o 180°")) {
                     Toggle("", isOn: Binding { store.tabletArea.rotation == 180 } set: { store.tabletArea.rotation = $0 ? 180 : 0 })
                         .labelsHidden().toggleStyle(.switch)
                 }
-                SettingRow(title: "Celý tablet", caption: "Použít největší plochu") {
+                SettingRow(title: L("Celý tablet"), caption: L("Použít největší plochu")) {
                     Button("Obnovit") { fit(scale: 1, center: true) }
                 }
             }
@@ -66,7 +66,7 @@ struct AreaView: View {
     // MARK: tablet area
 
     private var currentScale: Double {
-        let full = OTDStore.fullTablet
+        let full = store.fullTablet
         return max(store.tabletArea.width / full.width, store.tabletArea.height / full.height)
     }
 
@@ -76,7 +76,7 @@ struct AreaView: View {
 
     /// Sets the largest area with the right aspect ratio at `scale`, keeping it inside the tablet.
     private func fit(scale: Double, center: Bool) {
-        let full = OTDStore.fullTablet
+        let full = store.fullTablet
         var a = store.tabletArea
         var w = full.width * scale, h = full.height * scale
         if lockAspect, store.displayArea.height > 0 {
@@ -146,11 +146,12 @@ struct DisplayPreview: View {
 
 struct TabletAreaEditor: View {
     @Binding var area: AreaRect
+    var full: (width: Double, height: Double)
     @State private var dragStart: AreaRect?
 
     var body: some View {
         GeometryReader { g in
-            let full = OTDStore.fullTablet
+            let full = self.full
             let k = min(g.size.width / full.width, g.size.height / full.height) * 0.92
             let ox = (g.size.width - full.width * k) / 2, oy = (g.size.height - full.height * k) / 2
             ZStack(alignment: .topLeading) {

@@ -1,10 +1,21 @@
 # Tablet
 
 Nativní aplikace pro macOS, která vrací do života grafický tablet **Wacom Intuos Pro M (PTH-651)**
-na nových verzích macOS, pro které už Wacom ovladač nevydává.
+na nových verzích macOS, pro které už Wacom ovladač nevydává. V základní podobě funguje i s dalšími tablety,
+které podporuje OpenTabletDriver.
 
-*A native macOS settings app for the Wacom Intuos Pro M (PTH-651) on current macOS, built on top of
-[OpenTabletDriver](https://github.com/OpenTabletDriver/OpenTabletDriver). UI is in Czech.*
+*A native macOS app for the Wacom Intuos Pro M (PTH-651) – and, at a basic level, any tablet
+[OpenTabletDriver](https://github.com/OpenTabletDriver/OpenTabletDriver) supports – on current macOS.
+The driver is built in. UI in Czech and English.*
+
+## Instalace
+
+Stáhněte `Tablet-x.y.dmg` z [Releases](https://github.com/zdkdsgn/tablet/releases), přetáhněte Tablet do Aplikací
+a při prvním spuštění povolte v **Nastavení systému → Soukromí a zabezpečení** „Přesto otevřít“
+(aplikace není notarizovaná u Applu). Pak povolte **Zpřístupnění** a **Sledování vstupu**.
+
+*Download the DMG from Releases, drag Tablet to Applications, click “Open Anyway” in Privacy & Security
+(the app is not notarised), then allow Accessibility and Input Monitoring.*
 
 ![ikona](Resources/icon.png)
 
@@ -23,17 +34,38 @@ na nových verzích macOS, pro které už Wacom ovladač nevydává.
 
 - **Tablet:** kresba tabletu s popisky. ExpressKeys mají zkratky nahrávané stiskem kláves (fyzické klávesy,
   takže fungují s jakoukoli klávesnicí, třeba s českou QWERTZ), kliknutí myší a vlastní názvy.
-  Volitelně se při stisku ukáže oznámení na obrazovce.
+  Volitelně se při stisku ukáže oznámení na obrazovce. Místo zkratky můžou mít **funkci aplikace**:
+  - **Přesný režim:** dokud tlačítko držíte, pero se pohybuje jemněji.
+  - **Další monitor:** přepne mapování tabletu na další obrazovku.
+  - **Kruhové menu:** podržíte tlačítko, perem vyberete jednu z 8 akcí a tlačítko pustíte.
 - **Touch Ring:** plynulý zoom ke kurzoru (jemné posouvání s ⌥ nebo ⌘ podle aplikace). Tlačítko uprostřed přepíná
-  režimy Zoom, Velikost štětce, Historie a Posouvání.
+  vybrané režimy (nejvýš 4, podle počtu světýlek): Zoom, Velikost štětce, Historie, Posouvání
+  a Otáčení plátna (Photoshop).
 - **Světla:** světýlka kolečka a rohová světýlka plochy (jas, zapnutí a vypnutí, dýchání) a animace.
   Easter egg odemkne podržení tlačítka uprostřed kolečka.
-- **Pero:** zkušební plocha s ukazatelem tlaku, práh hrotu, vypnutí tlaku nebo náklonu a tlačítka pera i guma.
+- **Pero:** **křivka tlaku** (graf s tažitelným bodem, předvolby Měkký, Lineární a Tvrdý, „plný tlak při“),
+  **vyhlazení tahu**, nastavení přesného režimu, zkušební plocha s ukazatelem tlaku, práh hrotu, vypnutí tlaku
+  nebo náklonu a tlačítka pera i guma. Křivku, vyhlazení a přesný režim aplikuje Tablet na události pera
+  od ovladače (event tap), takže fungují v každé aplikaci.
+- **Okraje obrazovky:** kurzor pera zůstane uvnitř obrazovky a na okraji „tlačí“ ven, takže se automaticky
+  skrytý Dock vysune i perem.
 - **Plocha a monitor:** výběr monitoru, plocha tabletu posouvaná tažením, zachování poměru stran a režim pro leváky.
 - **Předvolby:** uložená nastavení a automatické přepínání podle aplikace, která je vpředu. Spouštění po přihlášení.
 - **Dotyk:** gesta jako na trackpadu. Je hotové, ale na testovaném kusu tabletu dotyková vrstva neposílá data,
   takže to není ověřené.
-- **Ikona v liště:** stav připojení, předvolby a rychlé přepínače.
+- **Ikona v liště:** stav připojení, režim kolečka, předvolby a rychlé přepínače.
+- **Kontrola ovladače:** jednou denně se podívá, jestli nevyšla novější verze OpenTabletDriveru.
+- **Jazyk:** čeština a angličtina podle jazyka macOS. Překlady jsou v `Resources/en.lproj`
+  a generuje je skript `Resources/translations-en.py`.
+
+### Podporované tablety
+
+| Úroveň | Tablety | Funkce |
+|---|---|---|
+| Rozšířená | Intuos Pro 2013 (PTH-451/651/851), Intuos5 (PTK-450/650/850, PTH-450/650/850) | všechno výše |
+| Základní | ostatní tablety podporované OpenTabletDriverem | pero, křivka tlaku, vyhlazení, plocha, monitor, ExpressKeys a kolečko přes OpenTabletDriver, předvolby |
+
+Ověřené je to jen s PTH-651. Hlášení o dalších tabletech jsou vítaná.
 
 ## Sestavení
 
@@ -42,6 +74,7 @@ Potřebujete macOS 14 nebo novější a Xcode (nebo Command Line Tools se Swifte
 ```bash
 ./make-app.sh            # stáhne a ověří OpenTabletDriver (jen poprvé) a sestaví build/Tablet.app
 ./make-app.sh --install  # a zkopíruje ji do /Applications
+./make-dmg.sh            # instalační build/Tablet-<verze>.dmg
 ```
 
 Aplikace je podepsaná ad hoc, s požadavkem na podpis vázaným jen na identifikátor balíčku. Díky tomu si macOS

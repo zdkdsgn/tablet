@@ -8,14 +8,18 @@ final class ModeHUD {
     private var panel: NSPanel?
     private var hideWork: DispatchWorkItem?
 
-    func show(_ mode: RingMode) {
-        present(HUDView(symbol: mode.symbol, title: mode.title, subtitle: nil, dots: RingMode.allCases.count, active: mode.rawValue),
+    func show(_ mode: RingMode, dots: Int, active: Int) {
+        present(HUDView(symbol: mode.symbol, title: mode.title, subtitle: nil, dots: dots, active: active),
                 duration: 1.2)
     }
 
     func showKey(_ index: Int, name: String, shortcut: String) {
         present(HUDView(symbol: "square.grid.2x2", title: name, subtitle: "ExpressKey \(index + 1) · \(shortcut)", dots: 0, active: 0),
                 duration: 0.9)
+    }
+
+    func showMessage(symbol: String, title: String, subtitle: String?) {
+        present(HUDView(symbol: symbol, title: title, subtitle: subtitle, dots: 0, active: 0), duration: 1.2)
     }
 
     private func present(_ view: HUDView, duration: Double) {

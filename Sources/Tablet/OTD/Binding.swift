@@ -57,28 +57,28 @@ enum BindingAction: Equatable {
 
     var title: String {
         switch self {
-        case .none: return "Nic"
+        case .none: return L("Nic")
         case .keys(let k): return KeyNames.display(k)
         case .mouse(let b): return Self.mouseTitle(b)
         case .adaptive(let b):
             switch b {
-            case "Button 1": return "Výchozí (tlačítko 1)"
-            case "Button 2": return "Výchozí (tlačítko 2)"
-            case "Tip": return "Hrot"
-            case "Eraser": return "Guma"
+            case "Button 1": return L("Výchozí (tlačítko 1)")
+            case "Button 2": return L("Výchozí (tlačítko 2)")
+            case "Tip": return L("Hrot")
+            case "Eraser": return L("Guma")
             default: return b
             }
-        case .unknown: return "Vlastní"
+        case .unknown: return L("Vlastní")
         }
     }
 
     static func mouseTitle(_ b: String) -> String {
         switch b {
-        case "Left": return "Kliknutí"
-        case "Right": return "Pravé kliknutí"
-        case "Middle": return "Prostřední kliknutí"
-        case "Backward": return "Zpět (myš)"
-        case "Forward": return "Vpřed (myš)"
+        case "Left": return L("Kliknutí")
+        case "Right": return L("Pravé kliknutí")
+        case "Middle": return L("Prostřední kliknutí")
+        case "Backward": return L("Zpět (myš)")
+        case "Forward": return L("Vpřed (myš)")
         default: return b
         }
     }

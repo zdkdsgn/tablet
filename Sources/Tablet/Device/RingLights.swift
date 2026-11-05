@@ -5,7 +5,7 @@ enum LEDBrightness: Int, CaseIterable, Identifiable {
     case low = 0, medium = 1, high = 2
     var id: Int { rawValue }
     var title: String {
-        switch self { case .low: return "Slabě"; case .medium: return "Středně"; case .high: return "Jasně" }
+        switch self { case .low: return L("Slabě"); case .medium: return L("Středně"); case .high: return L("Jasně") }
     }
 }
 
@@ -22,14 +22,14 @@ enum LEDAnimation: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .spin: return "Kolotoč"
-        case .pingPong: return "Ping-pong"
-        case .breathe: return "Dýchání"
-        case .sparkle: return "Jiskření"
-        case .countdown: return "Odpočet"
-        case .heartbeat: return "Tep"
-        case .police: return "Maják"
-        case .wave: return "Vlna"
+        case .spin: return L("Kolotoč")
+        case .pingPong: return L("Ping-pong")
+        case .breathe: return L("Dýchání")
+        case .sparkle: return L("Jiskření")
+        case .countdown: return L("Odpočet")
+        case .heartbeat: return L("Tep")
+        case .police: return L("Maják")
+        case .wave: return L("Vlna")
         }
     }
     var symbol: String {

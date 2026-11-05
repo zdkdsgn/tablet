@@ -5,12 +5,12 @@ enum Section: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .tablet: return "Tablet"
-        case .pen: return "Pero"
-        case .touch: return "Dotyk"
-        case .lights: return "Světla"
-        case .area: return "Plocha a monitor"
-        case .presets: return "Předvolby aplikací"
+        case .tablet: return L("Tablet")
+        case .pen: return L("Pero")
+        case .touch: return L("Dotyk")
+        case .lights: return L("Světla")
+        case .area: return L("Plocha a monitor")
+        case .presets: return L("Předvolby aplikací")
         }
     }
     var icon: String {
@@ -25,12 +25,12 @@ enum Section: String, CaseIterable, Identifiable {
     }
     var subtitle: String {
         switch self {
-        case .tablet: return "Klikněte na tlačítko nebo kolečko a nastavte, co dělá"
-        case .pen: return "Grip Pen · tlak 2048 úrovní · náklon"
-        case .touch: return "Ovládání prsty jako na trackpadu"
-        case .lights: return "Světýlka kolečka a rohů plochy"
-        case .area: return "Kterou část tabletu použít a na kterou obrazovku ji mapovat"
-        case .presets: return "Různé nastavení pro různé aplikace"
+        case .tablet: return L("Klikněte na tlačítko nebo kolečko a nastavte, co dělá")
+        case .pen: return L("Grip Pen · tlak 2048 úrovní · náklon")
+        case .touch: return L("Ovládání prsty jako na trackpadu")
+        case .lights: return L("Světýlka kolečka a rohů plochy")
+        case .area: return L("Kterou část tabletu použít a na kterou obrazovku ji mapovat")
+        case .presets: return L("Různé nastavení pro různé aplikace")
         }
     }
 }
@@ -56,7 +56,7 @@ struct RootView: View {
                 .frame(height: 52)
                 Divider().overlay(Theme.line)
                 if let e = store.lastError {
-                    Banner(text: e, button: "Zkusit znovu") { store.reload(); store.startDaemon() }
+                    Banner(text: e, button: L("Zkusit znovu")) { store.reload(); store.startDaemon() }
                         .padding([.horizontal, .top], 20)
                 }
                 Group {
@@ -88,10 +88,10 @@ struct Sidebar: View {
             HStack(spacing: 10) {
                 TabletGlyph()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Intuos Pro M").fontWeight(.semibold)
+                    Text(store.tablet.displayName).fontWeight(.semibold).lineLimit(1).minimumScaleFactor(0.7)
                     HStack(spacing: 5) {
                         Circle().fill(device.connected ? Theme.ok : Theme.secondary).frame(width: 7, height: 7)
-                        Text(device.connected ? "PTH-651 · připojeno" : "PTH-651 · nepřipojeno")
+                        Text("\(store.tablet.model) · \(device.connected || store.daemonRunning ? L("připojeno") : L("nepřipojeno"))")
                     }
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 }
@@ -102,7 +102,7 @@ struct Sidebar: View {
             .padding(.top, 30)
 
             VStack(spacing: 2) {
-                ForEach(Section.allCases) { s in
+                ForEach(Section.allCases.filter { store.tablet.enhanced || ($0 != .touch && $0 != .lights) }) { s in
                     Button { section = s } label: {
                         HStack(spacing: 10) {
                             Image(systemName: s.icon).frame(width: 18)
@@ -121,14 +121,23 @@ struct Sidebar: View {
             Spacer()
             VStack(alignment: .leading, spacing: 6) {
                 Text("Ovladač").font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                Text("OpenTabletDriver")
+                Text("OpenTabletDriver \(store.bundledDriverVersion)")
                 if store.daemonRunning {
                     Text("Běží · \(store.daemonSource.lowercased())").font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                    if store.daemonSource == "Samostatný OpenTabletDriver" {
+                    if store.daemonSource == L("Samostatný OpenTabletDriver") {
                         Button("Použít vestavěný") { store.startDaemon() }.controlSize(.small)
                     }
                 } else {
                     Button("Spustit ovladač") { store.startDaemon() }.controlSize(.small)
+                }
+                if let u = store.driverUpdate {
+                    Button { NSWorkspace.shared.open(u.url) } label: {
+                        Label("Nová verze \(u.version)", systemImage: "arrow.down.circle")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color(hex: 0x9CC3FF))
+                    .help("Aktualizujte OTD_VERSION a OTD_SHA256 v make-app.sh a aplikaci sestavte znovu, nebo stáhněte novější vydání aplikace Tablet.")
                 }
             }
             .padding(10)
@@ -164,7 +173,7 @@ struct PresetMenu: View {
     var body: some View {
         HStack(spacing: 8) {
             Text("Předvolba").foregroundStyle(Theme.secondary)
-            Menu(store.activePreset ?? "Bez předvolby") {
+            Menu(store.activePreset ?? L("Bez předvolby")) {
                 ForEach(store.presets, id: \.self) { p in Button(p) { store.applyPreset(p) } }
                 if !store.presets.isEmpty { Divider() }
                 Button("Uložit současné jako…") { name = ""; naming = true }

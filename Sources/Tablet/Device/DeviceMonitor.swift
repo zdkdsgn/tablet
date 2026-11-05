@@ -11,8 +11,21 @@ struct TouchPoint: Equatable {
 /// The device is opened *without* seizing it, so OpenTabletDriver keeps working alongside.
 @MainActor
 final class DeviceMonitor: ObservableObject {
-    static let vendorID = 0x056A
-    static let productID = 0x0315
+    private(set) var vendorID = 0x056A
+    private(set) var productID = 0x0315
+    /// Intuos5 / Intuos Pro report format: Touch Ring, LEDs and touch are read by this app.
+    private(set) var enhanced = true
+
+    /// Watches another tablet (after OpenTabletDriver detected it).
+    func setTarget(_ t: TabletInfo) {
+        enhanced = t.enhanced
+        guard t.vendorID != 0, t.vendorID != vendorID || t.productID != productID else { return }
+        vendorID = t.vendorID; productID = t.productID
+        if let m = manager { IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone)) }
+        manager = nil
+        devices.removeAll(); penInterface = nil; connected = false
+        start()
+    }
     static let touchMax = 4095.0
     static let maxPoints = 16
 
@@ -58,7 +71,7 @@ final class DeviceMonitor: ObservableObject {
         if !inputAccess { inputAccess = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) }
 
         let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        let match: [String: Any] = [kIOHIDVendorIDKey: Self.vendorID, kIOHIDProductIDKey: Self.productID]
+        let match: [String: Any] = [kIOHIDVendorIDKey: vendorID, kIOHIDProductIDKey: productID]
         IOHIDManagerSetDeviceMatching(m, match as CFDictionary)
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDManagerRegisterDeviceMatchingCallback(m, { ctx, _, _, device in
@@ -110,7 +123,7 @@ final class DeviceMonitor: ObservableObject {
         debug("device added \(desc) open=0x\(String(UInt32(bitPattern: openRes), radix: 16))")
         guard maxLen > 0 else { return }
         let page = (IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsagePageKey as CFString) as? NSNumber)?.intValue ?? 0
-        if page == 0xFF0D {
+        if page == 0xFF0D && enhanced {
             penInterface = device
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.onConnect?() }
         }
@@ -133,7 +146,7 @@ final class DeviceMonitor: ObservableObject {
             debug("report \(key): " + bytes.prefix(24).map { String(format: "%02x", $0) }.joined(separator: " "))
         }
         // Pad report on the pen interface: [2] = Touch Ring (bit 7 = finger on it, 0…71 position)
-        if bytes.first == 0x03, bytes.count >= 5 {
+        if enhanced, bytes.first == 0x03, bytes.count >= 5 {
             onRingButton?(bytes[3] & 0x01 != 0)
             onExpressKeys?((0..<8).map { bytes[4] & (1 << $0) != 0 })
             onRing?(bytes[2] & 0x80 != 0 ? Int(bytes[2] & 0x7F) : nil)

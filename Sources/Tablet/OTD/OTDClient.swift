@@ -31,7 +31,7 @@ enum OTDClient {
 
     @discardableResult
     static func call(_ method: String, params: [Any], timeout: TimeInterval = 5) throws -> Any? {
-        guard let fd = connect() else { throw RPCError(message: "Ovladač neběží") }
+        guard let fd = connect() else { throw RPCError(message: L("Ovladač neběží")) }
         defer { close(fd) }
         var tv = timeval(tv_sec: 1, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
@@ -41,7 +41,7 @@ enum OTDClient {
         var packet = Data("Content-Length: \(body.count)\r\n\r\n".utf8)
         packet.append(body)
         guard packet.withUnsafeBytes({ send(fd, $0.baseAddress, packet.count, 0) }) == packet.count else {
-            throw RPCError(message: "Nelze poslat zprávu ovladači")
+            throw RPCError(message: L("Nelze poslat zprávu ovladači"))
         }
 
         var buffer = Data()
@@ -52,7 +52,7 @@ enum OTDClient {
             while let (msg, rest) = takeMessage(buffer) {
                 buffer = rest
                 if let m = msg as? [String: Any], (m["id"] as? Int) == id {
-                    if let e = m["error"] as? [String: Any] { throw RPCError(message: e["message"] as? String ?? "Chyba ovladače") }
+                    if let e = m["error"] as? [String: Any] { throw RPCError(message: e["message"] as? String ?? L("Chyba ovladače")) }
                     return m["result"]
                 }
             }
@@ -60,7 +60,7 @@ enum OTDClient {
             if n > 0 { buffer.append(chunk, count: n) }
             else if n == 0 { break }               // closed
         }
-        throw RPCError(message: "Ovladač neodpověděl")
+        throw RPCError(message: L("Ovladač neodpověděl"))
     }
 
     private static func takeMessage(_ buf: Data) -> (Any, Data)? {

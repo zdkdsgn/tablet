@@ -1,6 +1,9 @@
 import SwiftUI
 import AppKit
 
+/// Localized UI text: Czech is the source language, English comes from en.lproj/Localizable.strings.
+func L(_ s: String) -> String { NSLocalizedString(s, comment: "") }
+
 enum Theme {
     static let window = Color(hex: 0x1B1B1D)
     static let sidebar = Color(hex: 0x232326)
@@ -97,8 +100,8 @@ struct ShortcutRecorder: View {
         Button {
             recording ? stop() : start()
         } label: {
-            Text(recording ? (peakMods.isEmpty ? "Stiskněte zkratku…" : KeyNames.display(peakMods) + "…")
-                           : (keys.isEmpty ? "Klikněte a nahrajte" : KeyNames.display(keys)))
+            Text(recording ? (peakMods.isEmpty ? L("Stiskněte zkratku…") : KeyNames.display(peakMods) + "…")
+                           : (keys.isEmpty ? L("Klikněte a nahrajte") : KeyNames.display(keys)))
                 .font(.system(size: recording ? 15 : 26, weight: .medium))
                 .tracking(recording ? 0 : 2)
                 .frame(maxWidth: .infinity, minHeight: 64)
@@ -143,7 +146,7 @@ struct ShortcutRecorder: View {
 struct ActionEditor: View {
     @Binding var action: BindingAction
     var defaultAction: BindingAction? = nil   // e.g. .adaptive("Button 1") for pen buttons
-    var defaultTitle = "Výchozí"
+    var defaultTitle = L("Výchozí")
 
     private enum Kind: Hashable { case keys, mouse, standard, none, other }
 
@@ -189,8 +192,8 @@ struct ActionEditor: View {
             switch action {
             case .keys(let k):
                 ShortcutRecorder(keys: keys)
-                Text(k.isEmpty ? "Klikněte a stiskněte zkratku. Esc zruší nahrávání."
-                     : (action.isModifierOnly ? "Klávesa se drží, dokud držíte tlačítko." : "Klikněte do pole a stiskněte novou zkratku."))
+                Text(k.isEmpty ? L("Klikněte a stiskněte zkratku. Esc zruší nahrávání.")
+                     : (action.isModifierOnly ? L("Klávesa se drží, dokud držíte tlačítko.") : L("Klikněte do pole a stiskněte novou zkratku.")))
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary)
             case .mouse:
                 Picker("Tlačítko myši", selection: mouse) {

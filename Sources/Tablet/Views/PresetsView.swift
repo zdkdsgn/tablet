@@ -7,7 +7,7 @@ struct PresetsView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 20) {
-            Card(title: "Předvolby") {
+            Card(title: L("Předvolby")) {
                 if store.presets.isEmpty {
                     Text("Zatím žádné. Nastavte tablet a uložte ho jako předvolbu.").foregroundStyle(Theme.secondary)
                 }
@@ -31,14 +31,14 @@ struct PresetsView: View {
                 }
             }
             VStack(spacing: 12) {
-                SettingRow(title: "Spouštět po přihlášení", caption: "Tablet i ovladač poběží hned po startu Macu") {
+                SettingRow(title: L("Spouštět po přihlášení"), caption: L("Tablet i ovladač poběží hned po startu Macu")) {
                     Toggle("", isOn: Binding { model.launchAtLogin } set: { model.setLaunchAtLogin($0) })
                         .labelsHidden().toggleStyle(.switch)
                 }
                 if let e = model.loginItemError {
                     Text(e).font(.system(size: 12)).foregroundStyle(Theme.warn).frame(maxWidth: .infinity, alignment: .leading)
                 }
-                SettingRow(title: "Přepínat podle aplikace", caption: "Předvolba pojmenovaná jako aplikace se zapne sama, když ji otevřete. Jinak se použije „Výchozí“.") {
+                SettingRow(title: L("Přepínat podle aplikace"), caption: L("Předvolba pojmenovaná jako aplikace se zapne sama, když ji otevřete. Jinak se použije „Výchozí“.")) {
                     Toggle("", isOn: $model.autoPresets).labelsHidden().toggleStyle(.switch)
                 }
                 Text("Úpravy v Tablet a Pero se ukládají do právě zapnuté předvolby.")

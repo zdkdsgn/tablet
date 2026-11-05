@@ -1,0 +1,132 @@
+import SwiftUI
+
+struct LightsView: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var lights: LightSettings
+    @EnvironmentObject var zoom: ZoomSettings
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 20) {
+            VStack(spacing: 20) {
+                Card(title: "Touch Ring") {
+                    SettingRow(title: "Světýlka kolečka", caption: zoom.smooth ? "Ukazují zvolený režim kolečka" : "Svítí první světýlko") {
+                        Toggle("", isOn: $lights.enabled).labelsHidden().toggleStyle(.switch)
+                    }
+                    brightnessPicker($lights.brightness).disabled(!lights.enabled)
+                }
+                Card(title: "Rohy plochy") {
+                    SettingRow(title: "Rohová světýlka", caption: "Čtyři značky aktivní plochy – svítí všechny naráz") {
+                        Toggle("", isOn: $lights.cornersEnabled).labelsHidden().toggleStyle(.switch)
+                    }
+                    brightnessPicker($lights.cornerBrightness).disabled(!lights.cornersEnabled)
+                    SettingRow(title: "Dýchání v klidu", caption: "Rohy pomalu pulzují") {
+                        Toggle("", isOn: $lights.breatheCorners).labelsHidden().toggleStyle(.switch)
+                    }
+                    .disabled(!lights.cornersEnabled)
+                }
+                LightsPreview()
+            }
+            VStack(spacing: 20) {
+                Card(title: "Animace") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack { Text("Rychlost animací"); Spacer(); Text(speedName).foregroundStyle(Theme.secondary) }
+                        Slider(value: $lights.animationSpeed, in: 0.5...2, step: 0.25)
+                    }
+                    SettingRow(title: "Při přepnutí režimu", caption: "Světlo oběhne kolečko a zastaví se na novém režimu") {
+                        Toggle("", isOn: $lights.animateModeChange).labelsHidden().toggleStyle(.switch)
+                    }
+                    SettingRow(title: "Uvítání po připojení", caption: "Kolotoč, když tablet připojíte") {
+                        Toggle("", isOn: $lights.welcomeAnimation).labelsHidden().toggleStyle(.switch)
+                    }
+                }
+                if lights.easterEggUnlocked {
+                    Card(title: "Světelná show", trailing: AnyView(Image(systemName: "sparkles").foregroundStyle(Theme.accent))) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Dlouhý stisk tlačítka uprostřed kolečka").foregroundStyle(Color(hex: 0xC7C7CC))
+                            Picker("Dlouhý stisk", selection: $lights.longPressAnimation) {
+                                Text("Náhodná animace").tag("random")
+                                ForEach(LEDAnimation.allCases) { Text($0.title).tag($0.rawValue) }
+                            }
+                            .labelsHidden()
+                        }
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                            ForEach(LEDAnimation.allCases) { a in
+                                Button { model.lights.play(a) } label: {
+                                    Label(a.title, systemImage: a.symbol)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 10).padding(.vertical, 8)
+                                        .background(Theme.well, in: RoundedRectangle(cornerRadius: 8))
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        Text("Klikněte na animaci a sledujte tablet.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                    }
+                } else {
+                    Card(title: "Světelná show") {
+                        HStack(spacing: 10) {
+                            Image(systemName: "lock.fill").foregroundStyle(Theme.secondary)
+                            Text("Skryté. Zkuste chvíli podržet tlačítko uprostřed kolečka…").foregroundStyle(Theme.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(width: 420)
+        }
+        .padding(24)
+        .onChange(of: lights.enabled) { _, _ in model.updateRingLED() }
+        .onChange(of: lights.brightness) { _, _ in model.updateRingLED() }
+        .onChange(of: lights.cornersEnabled) { _, _ in model.updateRingLED() }
+        .onChange(of: lights.cornerBrightness) { _, _ in model.updateRingLED() }
+        .onChange(of: lights.breatheCorners) { _, _ in model.updateRingLED() }
+    }
+
+    private var speedName: String {
+        switch lights.animationSpeed { case ..<0.8: return "Pomalu"; case ..<1.3: return "Normálně"; default: return "Rychle" }
+    }
+
+    private func brightnessPicker(_ b: Binding<LEDBrightness>) -> some View {
+        Picker("Intenzita", selection: b) {
+            ForEach(LEDBrightness.allCases) { Text($0.title).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+}
+
+/// Sketch of where the lights are on the tablet, mirroring the current settings.
+private struct LightsPreview: View {
+    @EnvironmentObject var lights: LightSettings
+    @EnvironmentObject var zoom: ZoomSettings
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle().stroke(Color(hex: 0x3F3F44), lineWidth: 3).frame(width: 64, height: 64)
+                ForEach(0..<4, id: \.self) { i in
+                    Circle()
+                        .fill(i == litRing ? Color.white.opacity(opacity(lights.brightness)) : Color(hex: 0x3A3A3E))
+                        .frame(width: 7, height: 7)
+                        .offset(y: -42)
+                        .rotationEffect(.degrees(-45 + Double(i) * 30))
+                }
+            }
+            .frame(width: 96, height: 96)
+            ZStack {
+                RoundedRectangle(cornerRadius: 8).stroke(Color(hex: 0x2B2B2E))
+                CornerMarks()
+                    .opacity(lights.cornersEnabled ? 1 : 0.25)
+                    .colorMultiply(lights.cornersEnabled ? .white.opacity(opacity(lights.cornerBrightness) + 0.3) : .white)
+            }
+            .frame(height: 96)
+        }
+        .padding(16)
+        .background(Color(hex: 0x0D0D0E), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(hex: 0x3A3A3E)))
+        .accessibilityHidden(true)
+    }
+
+    private var litRing: Int { lights.enabled ? (zoom.smooth ? zoom.mode.rawValue : 0) : -1 }
+    private func opacity(_ b: LEDBrightness) -> Double { [0.45, 0.7, 1.0][b.rawValue] }
+}

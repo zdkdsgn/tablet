@@ -19,6 +19,8 @@ final class AppModel: ObservableObject {
     }
     private(set) lazy var ringZoom = RingZoom(settings: zoom)
     let keyLabels = KeyLabels()
+    /// Keeps the pen cursor inside the screen and lets it push the auto-hidden Dock out.
+    let edgeFix = EdgeFix()
     /// Last pressed ExpressKey – the Tablet screen highlights it.
     @Published var pressedKey: Int?
     private var keysDown = [Bool](repeating: false, count: 8)
@@ -96,6 +98,7 @@ final class AppModel: ObservableObject {
                 self.accessibility = TouchEngine.accessibilityGranted
                 self.device.recheckAccess()
                 self.logStatus()
+                if self.accessibility && !self.edgeFix.enabled { self.edgeFix.start() }
             }
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
@@ -108,7 +111,7 @@ final class AppModel: ObservableObject {
     /// Writes permission / device state changes to ~/Library/Logs/Tablet.log (for troubleshooting).
     private func logStatus() {
         let hid = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
-        let s = "ax=\(accessibility) hidAccess=\(hid.rawValue) connected=\(device.connected) touchReports=\(device.touchReportsSeen) touches=\(device.touches.count) bundle=\(Bundle.main.bundlePath)"
+        let s = "ax=\(accessibility) hidAccess=\(hid.rawValue) connected=\(device.connected) touchReports=\(device.touchReportsSeen) touches=\(device.touches.count) edgeFix=\(edgeFix.enabled) bundle=\(Bundle.main.bundlePath)"
         guard s != lastStatus else { return }
         lastStatus = s
         let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Tablet.log")

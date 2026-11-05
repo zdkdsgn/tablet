@@ -21,9 +21,10 @@ final class OTDStore: ObservableObject {
     /// Physical active area of the PTH-651 (from the OTD configuration).
     static let fullTablet = (width: 223.52, height: 139.7)
 
-    let otdApp = URL(fileURLWithPath: "/Applications/OpenTabletDriver.app")
-    var consoleURL: URL { otdApp.appendingPathComponent("Contents/MacOS/OpenTabletDriver.Console") }
-    var daemonURL: URL { otdApp.appendingPathComponent("Contents/MacOS/OpenTabletDriver.Daemon") }
+    /// The OpenTabletDriver daemon shipped inside Tablet.app (Contents/Helpers).
+    var daemonURL: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/OpenTabletDriver.Daemon") }
+    /// What the running daemon is: ours, a separately installed OpenTabletDriver.app, or none.
+    @Published var daemonSource: String = ""
     let dir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/OpenTabletDriver")
     var settingsURL: URL { dir.appendingPathComponent("settings.json") }
@@ -171,48 +172,66 @@ final class OTDStore: ObservableObject {
     }
 
     /// Tells the running daemon to load settings.json.
+    /// Sends the current settings to the running daemon over its JSON-RPC socket.
     func pushToDaemon() {
-        let console = consoleURL, file = settingsURL
+        let settings = root
         Task.detached {
-            let ok = Self.run(console, ["load", file.path])
-            await MainActor.run { if !ok { self.lastError = "Ovladač nastavení nepřevzal – běží OpenTabletDriver?" } else { self.lastError = nil } }
+            let ok = OTDClient.setSettings(settings)
+            await MainActor.run { self.lastError = ok ? nil : "Ovladač nastavení nepřevzal – zkuste ho spustit znovu." }
         }
-    }
-
-    nonisolated static func run(_ exe: URL, _ args: [String]) -> Bool {
-        let p = Process()
-        p.executableURL = exe
-        p.arguments = args
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return false }
-        p.waitUntilExit()
-        return p.terminationStatus == 0
     }
 
     // MARK: - Daemon
 
-    func checkDaemon() {
+    /// Processes named OpenTabletDriver.Daemon with their executable paths.
+    nonisolated static func runningDaemons() -> [(pid: Int32, path: String)] {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        p.arguments = ["-f", "OpenTabletDriver.Daemon"]
-        p.standardOutput = FileHandle.nullDevice
-        try? p.run()
+        p.executableURL = URL(fileURLWithPath: "/bin/ps")
+        p.arguments = ["-axo", "pid=,comm="]
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return [] }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
-        daemonRunning = p.terminationStatus == 0
+        return String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap { line in
+            let t = line.trimmingCharacters(in: .whitespaces)
+            guard let sp = t.firstIndex(of: " "), t.hasSuffix("OpenTabletDriver.Daemon"), let pid = Int32(t[..<sp]) else { return nil }
+            return (pid, t[sp...].trimmingCharacters(in: .whitespaces))
+        }
     }
 
+    func checkDaemon() {
+        let daemons = Self.runningDaemons()
+        daemonRunning = !daemons.isEmpty && OTDClient.isReachable()
+        if daemons.isEmpty { daemonSource = "" }
+        else if daemons.contains(where: { $0.path == daemonURL.path }) { daemonSource = "Součást aplikace" }
+        else { daemonSource = "Samostatný OpenTabletDriver" }
+    }
+
+    /// Starts the bundled daemon. A daemon from a separately installed OpenTabletDriver.app is stopped
+    /// first, so only one driver talks to the tablet.
     func startDaemon() {
-        guard !daemonRunning else { return }
-        let p = Process()
-        p.executableURL = daemonURL
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        do {
-            try p.run()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.checkDaemon(); self.pushToDaemon() }
-        } catch {
-            lastError = "OpenTabletDriver nejde spustit: \(error.localizedDescription)"
+        let mine = daemonURL.path
+        let daemons = Self.runningDaemons()
+        if daemons.contains(where: { $0.path == mine }) { checkDaemon(); return }
+        guard FileManager.default.isExecutableFile(atPath: mine) else {
+            lastError = "V aplikaci chybí ovladač (Contents/Helpers/OpenTabletDriver.Daemon). Sestavte ji znovu skriptem make-app.sh."
+            return
+        }
+        for d in daemons { kill(d.pid, SIGTERM) }
+        let delay = daemons.isEmpty ? 0 : 1.5
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            let p = Process()
+            p.executableURL = self.daemonURL
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            do {
+                try p.run()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.checkDaemon(); self.pushToDaemon() }
+            } catch {
+                self.lastError = "Ovladač nejde spustit: \(error.localizedDescription)"
+            }
         }
     }
 

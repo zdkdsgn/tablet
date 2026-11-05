@@ -120,7 +120,10 @@ struct Sidebar: View {
                 Text("Ovladač").font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Text("OpenTabletDriver")
                 if store.daemonRunning {
-                    Text("Běží na pozadí").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    Text("Běží · \(store.daemonSource.lowercased())").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    if store.daemonSource == "Samostatný OpenTabletDriver" {
+                        Button("Použít vestavěný") { store.startDaemon() }.controlSize(.small)
+                    }
                 } else {
                     Button("Spustit ovladač") { store.startDaemon() }.controlSize(.small)
                 }

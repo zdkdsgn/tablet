@@ -10,11 +10,12 @@ na nových verzích macOS, pro které už Wacom ovladač nevydává.
 
 ## Jak to funguje
 
-- Pero a ExpressKeys obsluhuje **OpenTabletDriver** (jeho démon na pozadí). Tablet ho musí mít nainstalovaný
-  v `/Applications/OpenTabletDriver.app`. Jeho okno s nastavením není potřeba.
-- **Tablet** nahrazuje okno OpenTabletDriveru: zapisuje do jeho `settings.json`
-  (`~/Library/Application Support/OpenTabletDriver`) a démon ho hned načte (`OpenTabletDriver.Console load`).
-  Démona taky sama spustí.
+- Pero a ExpressKeys obsluhuje démon **OpenTabletDriveru**, který je **přibalený přímo v aplikaci**
+  (`Tablet.app/Contents/Helpers/OpenTabletDriver.Daemon`). Samostatný OpenTabletDriver instalovat nemusíte.
+  Pokud ho máte, Tablet jeho démona při startu zastaví a spustí svůj, aby s tabletem mluvil jen jeden ovladač.
+- **Tablet** nahrazuje okno OpenTabletDriveru: zapisuje do `settings.json`
+  (`~/Library/Application Support/OpenTabletDriver`) a démonovi ho rovnou předá přes jeho JSON-RPC socket
+  (`$TMPDIR/CoreFxPipe_OpenTabletDriver.Daemon`, metoda `SetSettings`).
 - Touch Ring, jeho tlačítko a světýlka obsluhuje Tablet přímo přes IOKit HID. Zařízení si nezabírá,
   takže OpenTabletDriver běží dál.
 
@@ -39,7 +40,7 @@ na nových verzích macOS, pro které už Wacom ovladač nevydává.
 Potřebujete macOS 14 nebo novější a Xcode (nebo Command Line Tools se Swiftem 5.10 a novějším).
 
 ```bash
-./make-app.sh            # sestaví build/Tablet.app
+./make-app.sh            # stáhne a ověří OpenTabletDriver (jen poprvé) a sestaví build/Tablet.app
 ./make-app.sh --install  # a zkopíruje ji do /Applications
 ```
 
@@ -61,4 +62,7 @@ pamatuje udělená oprávnění i po novém sestavení. Identifikátor si může
 
 ## Licence
 
-MIT. OpenTabletDriver je samostatný projekt pod vlastní licencí (LGPL-3.0) a tento repozitář ho neobsahuje.
+Kód aplikace je pod licencí MIT. [OpenTabletDriver](https://github.com/OpenTabletDriver/OpenTabletDriver) je samostatný projekt
+pod licencí LGPL-3.0. Repozitář ho neobsahuje: `make-app.sh` stáhne jeho oficiální vydání (verze a SHA-256
+jsou uvedené ve skriptu) a přibalí do aplikace nezměněný démon spolu s jeho licencí
+(`Contents/Resources/OpenTabletDriver-LICENSE.txt`). Démona jde kdykoli nahradit jinou verzí.

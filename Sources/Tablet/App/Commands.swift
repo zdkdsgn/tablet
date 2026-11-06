@@ -59,6 +59,10 @@ enum Commands {
         case "notify":
             let anim = LEDAnimation(rawValue: q("animation") ?? "") ?? m.reminderSettings.animation
             m.alert(anim, symbol: q("symbol") ?? "bell", title: q("title") ?? (arg.isEmpty ? L("Tablet") : arg), subtitle: q("text"))
+        case "notch":   // tablet://notch?title=…&text=…  – message in the notch island (also a demo without a title)
+            if arg == "stats" { m.island.showStats(for: 5) }
+            else if let t = q("title") { m.island.message(t, subtitle: q("text")) }
+            else { m.island.message(PenOdometer.milestoneText(PenOdometer.milestones.last { $0 * 1000 <= m.odometer.drawn } ?? 1), subtitle: PenOdometer.pencilUsed(m.odometer.drawn)) }
         case "break":
             m.reminders.resetBreak()
         case "display":

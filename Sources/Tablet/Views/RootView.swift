@@ -101,8 +101,10 @@ struct Sidebar: View {
                     HStack(spacing: 5) {
                         Circle().fill(device.connected ? Theme.ok : Theme.secondary).frame(width: 7, height: 7)
                         Text("\(store.tablet.model) · \(device.connected || store.daemonRunning ? L("připojeno") : L("nepřipojeno"))")
+                            .lineLimit(1).minimumScaleFactor(0.8)
                     }
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    TabletBatteryLabel().font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 }
             }
             .padding(10)

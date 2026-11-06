@@ -1,26 +1,26 @@
 import Foundation
 import CoreGraphics
 
-/// Where the pen is above the tablet right now (mm, native tablet frame), for the live dot in the previews.
-/// Updated at most ~60× a second so the views stay cheap.
+/// The pen above the tablet right now (position in mm in the native tablet frame, pressure, tilt, height),
+/// for the live dot in the previews and the pen check. Updated at most ~60× a second so the views stay cheap.
 @MainActor
 final class PenHover: ObservableObject {
-    @Published private(set) var mm: CGPoint?
-    /// 0…1 tip pressure (0 = hovering).
-    @Published private(set) var pressure: Double = 0
+    @Published private(set) var sample: PenSample?
+    var mm: CGPoint? { sample?.mm }
+    var pressure: Double { sample?.pressure ?? 0 }
     private var last = Date.distantPast
     private var timeout: Timer?
 
-    func update(_ p: CGPoint?, pressure: Double) {
+    func update(_ s: PenSample?) {
         timeout?.invalidate()
-        guard let p else { mm = nil; self.pressure = 0; return }
+        guard let s else { sample = nil; return }
         // the pen can leave range without an "exit" report (e.g. lifted fast) – hide the dot after a pause
         timeout = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.mm = nil; self?.pressure = 0 }
+            MainActor.assumeIsolated { self?.sample = nil }
         }
         let now = Date()
         guard now.timeIntervalSince(last) > 1.0 / 60 else { return }
         last = now
-        mm = p; self.pressure = pressure
+        sample = s
     }
 }

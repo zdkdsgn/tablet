@@ -5,6 +5,7 @@ struct PenView: View {
     @EnvironmentObject var behaviour: KeyBehaviour
     @EnvironmentObject var store: OTDStore
     @EnvironmentObject var pen: PenFilters
+    @EnvironmentObject var model: AppModel
     @State private var pressure: Double = 0
     @State private var clearToken = 0
 
@@ -31,6 +32,10 @@ struct PenView: View {
                             Text("\(Int(pressure * 100)) %").monospacedDigit().frame(width: 44, alignment: .trailing)
                         }
                     }
+                    PenCheckCard(hover: model.penHover, profiles: model.penProfiles)
+                    OdometerCard(odo: model.odometer)
+                    AchievementsCard(ach: model.achievements)
+                    PensCard(profiles: model.penProfiles, odo: model.odometer)
                 }
             }
             ScrollView {
@@ -192,5 +197,221 @@ struct PressurePad: NSViewRepresentable {
             onPressure?(Double(pr))
             needsDisplay = true
         }
+    }
+}
+
+/// Live pen check straight from the tablet: height above the surface, tilt, pressure.
+struct PenCheckCard: View {
+    @ObservedObject var hover: PenHover
+    @ObservedObject var profiles: PenProfiles
+
+    var body: some View {
+        Card(title: L("Kontrola pera"), trailing: AnyView(Text(penName).font(.system(size: 12)).foregroundStyle(Theme.secondary))) {
+            HStack(alignment: .center, spacing: 24) {
+                tiltGauge.frame(width: 120, height: 120)
+                VStack(alignment: .leading, spacing: 12) {
+                    meter(L("Výška nad tabletem"), value: hover.sample.map { 1 - $0.distance } ?? 0,
+                          text: hover.sample.map { $0.pressure > 0 ? L("dotýká se") : String(format: L("%d %% dosahu"), Int(($0.distance * 100).rounded())) } ?? "–")
+                    meter(L("Přítlak"), value: hover.pressure, text: hover.sample == nil ? "–" : "\(Int(hover.pressure * 100)) %")
+                    meter(L("Náklon"), value: tiltAmount / 60,
+                          text: hover.sample == nil ? "–" : String(format: "%.0f°", tiltAmount))
+                }
+            }
+            Text(hover.sample == nil ? L("Přiložte pero nad tablet – ukáže se, co tablet právě měří.") : L("Hodnoty přímo z tabletu. Výška je přibližná, tablet pero cítí asi do 1 cm."))
+                .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+        }
+    }
+
+    private var penName: String {
+        guard let c = profiles.current, let p = profiles.pens.first(where: { $0.serial == c }) else { return "" }
+        return p.name
+    }
+
+    private var tiltAmount: Double {
+        guard let s = hover.sample else { return 0 }
+        return min(60, hypot(s.tiltX, s.tiltY))
+    }
+
+    /// Top view: the dot moves the way the pen leans.
+    private var tiltGauge: some View {
+        GeometryReader { g in
+            let r = min(g.size.width, g.size.height) / 2
+            let s = hover.sample
+            let p = CGPoint(x: r + (s?.tiltX ?? 0) / 64 * r * 0.9, y: r + (s?.tiltY ?? 0) / 64 * r * 0.9)
+            ZStack {
+                Circle().fill(Theme.well)
+                Circle().strokeBorder(Theme.line, lineWidth: 1).padding(r * 0.33)
+                Circle().strokeBorder(Theme.line, lineWidth: 1)
+                Path { $0.move(to: CGPoint(x: r, y: 4)); $0.addLine(to: CGPoint(x: r, y: 2 * r - 4)); $0.move(to: CGPoint(x: 4, y: r)); $0.addLine(to: CGPoint(x: 2 * r - 4, y: r)) }
+                    .stroke(Theme.line, lineWidth: 1)
+                if s != nil {
+                    Path { $0.move(to: CGPoint(x: r, y: r)); $0.addLine(to: p) }.stroke(Theme.warn, lineWidth: 2)
+                    Circle().fill(Theme.warn).frame(width: 12, height: 12).position(p)
+                }
+                Circle().fill(Theme.secondary).frame(width: 5, height: 5)
+            }
+            .frame(width: 2 * r, height: 2 * r)
+            .animation(.linear(duration: 0.05), value: s?.tiltX)
+        }
+        .accessibilityLabel(L("Náklon pera"))
+    }
+
+    private func meter(_ title: String, value: Double, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack { Text(title); Spacer(); Text(text).monospacedDigit().foregroundStyle(Theme.secondary) }
+            ProgressView(value: min(max(value, 0), 1)).tint(Theme.warn)
+        }
+    }
+}
+
+/// Pens the tablet has seen (by serial number) and the per-pen settings switch.
+struct PensCard: View {
+    @ObservedObject var profiles: PenProfiles
+    @ObservedObject var odo: PenOdometer
+    @State private var editing: String?
+    @State private var draft = ""
+
+    var body: some View {
+        Card(title: L("Moje pera")) {
+            SettingRow(title: L("Nastavení pro každé pero zvlášť"), caption: L("Křivka tlaku, vyhlazení, tlačítka a guma se pamatují pro každé pero podle jeho sériového čísla")) {
+                Toggle("", isOn: $profiles.perPen).labelsHidden().toggleStyle(.switch)
+            }
+            if profiles.pens.isEmpty {
+                Text("Zatím žádné pero. Přiložte pero k tabletu.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            }
+            ForEach(profiles.pens.sorted { $0.lastSeen > $1.lastSeen }) { p in
+                HStack(spacing: 10) {
+                    Image(systemName: "pencil.tip").foregroundStyle(p.serial == profiles.current ? Theme.accent : Theme.secondary).frame(width: 18)
+                    VStack(alignment: .leading, spacing: 2) {
+                        if editing == p.serial {
+                            TextField("", text: $draft).textFieldStyle(.roundedBorder)
+                                .onSubmit { profiles.rename(p.serial, to: draft); editing = nil }
+                        } else {
+                            Text(p.name).fontWeight(.medium)
+                        }
+                        Text("\(p.kind) · č. \(p.serial)" + (odo.perPen[p.serial].map { " · " + PenOdometer.format($0) } ?? ""))
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.secondary)
+                    }
+                    Spacer()
+                    if p.serial == profiles.current {
+                        Text("V ruce").font(.system(size: 11, weight: .medium))
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Theme.accent.opacity(0.18), in: Capsule()).foregroundStyle(Theme.accent)
+                    }
+                    Menu {
+                        Button("Přejmenovat") { draft = p.name; editing = p.serial }
+                        Button("Zapomenout", role: .destructive) { profiles.forget(p.serial) }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton).fixedSize()
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Theme.well, in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+    }
+}
+
+/// How far the pen has travelled, with silly comparisons.
+struct OdometerCard: View {
+    @ObservedObject var odo: PenOdometer
+    @State private var confirmReset = false
+
+    var body: some View {
+        Card(title: L("Počítadlo pera"), trailing: AnyView(
+            Button("Vynulovat") { confirmReset = true }.controlSize(.small)
+                .confirmationDialog(L("Vynulovat počítadlo pera?"), isPresented: $confirmReset) {
+                    Button("Vynulovat", role: .destructive) { odo.reset() }
+                })) {
+            HStack(alignment: .top, spacing: 12) {
+                stat(L("Dnes nakresleno"), PenOdometer.format(odo.today), "calendar")
+                stat(L("Celkem nakresleno"), PenOdometer.format(odo.drawn), "scribble.variable")
+            }
+            HStack(alignment: .top, spacing: 12) {
+                stat(L("Tahů"), odo.strokes.formatted(), "hand.draw")
+                stat(L("Nad tabletem ve vzduchu"), PenOdometer.format(odo.hovered), "wind")
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                if let c = PenOdometer.comparison(odo.drawn) {
+                    Text(String(format: L("To je jako %@."), c)).fontWeight(.medium)
+                } else {
+                    Text("Zatím ani délka tužky. Do toho!").fontWeight(.medium)
+                }
+                Text(PenOdometer.pencilUsed(odo.drawn)).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Theme.warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func stat(_ title: String, _ value: String, _ symbol: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 16)).foregroundStyle(Theme.warn).frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value).font(.system(size: 17, weight: .semibold)).monospacedDigit()
+                Text(title).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(Theme.well, in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// Unlocked / locked achievements.
+struct AchievementsCard: View {
+    @ObservedObject var ach: Achievements
+    @State private var confirmReset = false
+
+    var body: some View {
+        Card(title: L("Úspěchy"), trailing: AnyView(
+            HStack(spacing: 8) {
+                Text("\(ach.count) / \(Achievements.all.count)").monospacedDigit().foregroundStyle(Theme.secondary)
+                Menu {
+                    Button("Začít znovu", role: .destructive) { confirmReset = true }
+                } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton).fixedSize()
+            }
+            .confirmationDialog(L("Smazat všechny úspěchy?"), isPresented: $confirmReset) {
+                Button("Smazat", role: .destructive) { ach.reset() }
+            })) {
+            ProgressView(value: Double(ach.count), total: Double(Achievements.all.count)).tint(Theme.warn)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
+                ForEach(Achievements.all) { a in tile(a) }
+            }
+        }
+    }
+
+    private func tile(_ a: Achievements.Def) -> some View {
+        let on = ach.isUnlocked(a.id)
+        let hidden = a.secret && !on
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                ZStack {
+                    Circle().fill(on ? Theme.warn.opacity(0.2) : Theme.control).frame(width: 30, height: 30)
+                    Image(systemName: hidden ? "questionmark" : a.symbol)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(on ? Theme.warn : Theme.secondary)
+                }
+                Spacer()
+                if let d = ach.unlocked[a.id] {
+                    Text(d.formatted(date: .numeric, time: .omitted)).font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                } else {
+                    Image(systemName: "lock.fill").font(.system(size: 10)).foregroundStyle(Theme.secondary.opacity(0.6))
+                }
+            }
+            Text(hidden ? "???" : L(a.title)).font(.system(size: 12, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            Text(hidden ? L("Tajný úspěch – přijdete na něj sami.") : L(a.detail))
+                .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
+        .background(Theme.well, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(on ? Theme.warn.opacity(0.45) : .clear))
+        .opacity(on ? 1 : 0.75)
+        .help(hidden ? "" : L(a.detail))
     }
 }

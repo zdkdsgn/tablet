@@ -8,6 +8,7 @@ struct GeneralView: View {
     @EnvironmentObject var updater: Updater
     @State private var copied: String?
     @AppStorage("appearance") private var appearance = AppearanceChoice.system.rawValue
+    @AppStorage("island.enabled") private var island = true
 
     var body: some View {
         ScrollView {
@@ -51,6 +52,16 @@ struct GeneralView: View {
                     Card(title: L("Instalace přes Homebrew")) {
                         Text("Na dalším Macu stačí v Terminálu:").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                         copyRow("brew install --cask zdkdsgn/tap/tablet")
+                    }
+                    SettingRow(title: L("Animace ve výřezu"), caption: L("Když vezmete pero do ruky, z výřezu MacBooku vykoukne jeho náklon a přítlak. Najedete-li perem do výřezu, ukáže statistiky. Ozve se i při milnících a úspěších.")) {
+                        HStack(spacing: 8) {
+                            Button("Ukázat") {
+                                model.island.message(PenOdometer.milestoneText(PenOdometer.milestones.last { $0 * 1000 <= model.odometer.drawn } ?? 1),
+                                                     subtitle: PenOdometer.pencilUsed(model.odometer.drawn))
+                            }
+                            .disabled(!island)
+                            Toggle("", isOn: $island).labelsHidden().toggleStyle(.switch)
+                        }
                     }
                     SettingRow(title: L("Vzhled"), caption: L("Světlý, tmavý, nebo podle nastavení Macu")) {
                         Picker("", selection: $appearance) {

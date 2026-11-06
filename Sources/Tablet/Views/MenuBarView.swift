@@ -144,6 +144,7 @@ struct MenuBarView: View {
                 HStack(spacing: 6) {
                     Circle().fill(ok ? Theme.ok : Theme.warn).frame(width: 7, height: 7)
                     Text(status).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                    TabletBatteryLabel().font(.system(size: 12))
                 }
             }
             Spacer()
@@ -186,6 +187,7 @@ struct MenuBarView: View {
     private var status: String {
         if !device.connected { return L("Nepřipojeno") }
         if !store.daemonRunning { return L("Ovladač neběží") }
+        if device.touchSwitchOn == false { return L("Připojeno · dotyk vypnutý vypínačem") }
         return L("Připojeno přes USB")
     }
 }

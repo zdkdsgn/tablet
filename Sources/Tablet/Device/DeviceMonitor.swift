@@ -5,6 +5,19 @@ struct TouchPoint: Equatable {
     var id: Int
     var x: Double   // 0…4095
     var y: Double   // 0…4095
+    /// Contact width / height as the tablet reports them (bytes 5, 6 of the chunk; bigger = larger contact).
+    var w: Double = 0
+    var h: Double = 0
+    var size: Double { max(w, h) }
+}
+
+/// One pen sample beyond position: tilt in degrees (±64) and hover distance 0 (touching) … 1 (edge of range).
+struct PenSample: Equatable {
+    var mm: CGPoint
+    var pressure: Double
+    var tiltX: Double
+    var tiltY: Double
+    var distance: Double
 }
 
 /// Watches for the Intuos Pro M over USB and reads its touch reports.
@@ -41,8 +54,19 @@ final class DeviceMonitor: ObservableObject {
     var onKeyTouch: (([Bool]) -> Void)?
     /// The pen came into range: true = eraser end, false = tip (from the tool ID in the "enter" report).
     var onTool: ((Bool) -> Void)?
-    /// Pen position in mm (nil = out of range) and tip pressure 0…1.
-    var onPen: ((CGPoint?, Double) -> Void)?
+    /// Pen sample (nil = out of range).
+    var onPen: ((PenSample?) -> Void)?
+    /// Pen came into range: tool ID and the pen's own serial number.
+    var onPenIdentity: ((Int, UInt32) -> Void)?
+    /// Touch on/off switch on the tablet's side (nil = not known yet).
+    @Published private(set) var touchSwitchOn: Bool?
+    /// Wireless kit battery in % (nil = no kit). The raw value jumps around, so the highest reading of the last minute is used.
+    @Published private(set) var battery: Int?
+    @Published private(set) var charging = false
+    private var batteryReadings: [(Date, Int)] = []
+    private var batteryFirst: Date?
+    private var lastStatus: [UInt8] = []
+    private var lastPadFlags: UInt8?
     /// Called when the tablet (re)appears, e.g. to restore the ring LED.
     var onConnect: (() -> Void)?
 
@@ -150,8 +174,18 @@ final class DeviceMonitor: ObservableObject {
             debugCounts[key] = c + 1
             debug("report \(key): " + bytes.prefix(24).map { String(format: "%02x", $0) }.joined(separator: " "))
         }
+        // Status report (0xC0): logged on every change – used to find the touch switch bit
+        if bytes.first == 0xC0 {
+            if bytes != lastStatus {
+                debug("status " + bytes.map { String(format: "%02x", $0) }.joined(separator: " "))
+                lastStatus = bytes
+                updateTouchSwitch(status: bytes)
+            }
+            return
+        }
         // Pad report on the pen interface: [2] = Touch Ring (bit 7 = finger on it, 0…71 position)
         if enhanced, bytes.first == 0x03, bytes.count >= 5 {
+            if bytes[1] != lastPadFlags { debug("pad flags \(String(format: "%02x", bytes[1]))"); lastPadFlags = bytes[1] }
             onRingButton?(bytes[3] & 0x01 != 0)
             onExpressKeys?((0..<8).map { bytes[4] & (1 << $0) != 0 })
             // byte 5: ExpressKeys that are only touched (capacitive sensing, Wacom's "Express View")
@@ -164,16 +198,24 @@ final class DeviceMonitor: ObservableObject {
         if enhanced, bytes.first == 0x02, bytes.count >= 9 {
             if bytes[1] & 0xFC == 0xC0 {
                 let id = (Int(bytes[2]) << 4) | (Int(bytes[3]) >> 4) | ((Int(bytes[7]) & 0x0F) << 16) | ((Int(bytes[8]) & 0xF0) << 8)
-                debug("pen enter tool 0x\(String(id, radix: 16))")
+                // serial number of this particular pen (Linux wacom_intuos_inout)
+                let serial = (UInt32(bytes[3] & 0x0F) << 28) | (UInt32(bytes[4]) << 20) | (UInt32(bytes[5]) << 12)
+                    | (UInt32(bytes[6]) << 4) | (UInt32(bytes[7]) >> 4)
+                debug("pen enter tool 0x\(String(id, radix: 16)) serial \(String(format: "%08X", serial))")
+                onPenIdentity?(id, serial)
                 onTool?(id & 0x8 != 0)
             } else if bytes.count >= 10, bytes[1] & 0xB8 == 0xA0 {
                 // general pen report (Linux wacom_intuos_general): 16-bit + 1 extra bit per axis, 200 lines per mm
                 let x = (Int(bytes[2]) << 9) | (Int(bytes[3]) << 1) | ((Int(bytes[9]) >> 1) & 1)
                 let y = (Int(bytes[4]) << 9) | (Int(bytes[5]) << 1) | (Int(bytes[9]) & 1)
                 let p = (Int(bytes[6]) << 3) | ((Int(bytes[7]) & 0xC0) >> 5) | (Int(bytes[1]) & 1)
-                onPen?(CGPoint(x: Double(x) / 200, y: Double(y) / 200), min(1, Double(p) / 2047))
+                let tx = Double(((Int(bytes[7]) << 1) & 0x7E) | (Int(bytes[8]) >> 7)) - 64
+                let ty = Double(Int(bytes[8]) & 0x7F) - 64
+                let pressure = min(1, Double(p) / 2047)
+                onPen?(PenSample(mm: CGPoint(x: Double(x) / 200, y: Double(y) / 200), pressure: pressure,
+                                 tiltX: tx, tiltY: ty, distance: pressure > 0 ? 0 : Double(bytes[9] >> 2) / 63))
             } else if bytes[1] & 0xFE == 0x80 {
-                onPen?(nil, 0)   // left proximity
+                onPen?(nil)   // left proximity
             }
             return
         }
@@ -182,6 +224,7 @@ final class DeviceMonitor: ObservableObject {
 
     private func removed(_ device: IOHIDDevice) {
         devices.remove(device)
+        battery = nil; batteryReadings.removeAll(); batteryFirst = nil; touchSwitchOn = nil
         if device == penInterface { penInterface = nil }
         if let b = buffers.removeValue(forKey: device) { b.deallocate() }
         connected = !devices.isEmpty
@@ -214,10 +257,31 @@ final class DeviceMonitor: ObservableObject {
             } else {
                 let x = (Int(r[o + 2]) << 4) | (Int(r[o + 4]) >> 4)
                 let y = (Int(r[o + 3]) << 4) | (Int(r[o + 4]) & 0xF)
-                slots[id] = TouchPoint(id: id, x: Double(x), y: Double(y))
+                // Intuos Pro (Linux INTUOSPS…INTUOSHT2): contact width / height in bytes 5, 6
+                let w = o + 5 < r.count ? Double(r[o + 5]) : 0, h = o + 6 < r.count ? Double(r[o + 6]) : 0
+                slots[id] = TouchPoint(id: id, x: Double(x), y: Double(y), w: w, h: h)
             }
         }
         if sawTouch { touchReportsSeen += 1; publish() }
+    }
+
+    /// Status byte 8 bit 0x40 = touch switch off (Linux reports it so for Intuos HT; checked on this model via the log).
+    private func updateTouchSwitch(status b: [UInt8]) {
+        guard b.count > 9 else { return }
+        touchSwitchOn = b[8] & 0x40 == 0
+        // Linux wacom_status_irq: [9] & 0x02 = wireless module attached, [8] & 0x3F = level 0…31, [8] & 0x80 = charging
+        if b[9] & 0x02 != 0 {
+            let now = Date()
+            batteryReadings.append((now, Int(b[8] & 0x3F) * 100 / 31))
+            batteryReadings.removeAll { now.timeIntervalSince($0.0) > 60 }
+            // wait for readings over at least 20 s before showing anything (the first one is often low)
+            batteryFirst = batteryFirst ?? now
+            let level = now.timeIntervalSince(batteryFirst!) >= 20 ? batteryReadings.map(\.1).max() : nil
+            if level != nil && level != battery { battery = level }
+            charging = b[8] & 0x80 != 0
+        } else if battery != nil {
+            battery = nil; batteryReadings.removeAll(); batteryFirst = nil
+        }
     }
 
     private func publish() {

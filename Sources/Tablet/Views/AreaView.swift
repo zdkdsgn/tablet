@@ -636,10 +636,19 @@ struct PenDot: View {
     var map: (CGPoint) -> CGPoint
 
     var body: some View {
-        if let mm = pen.mm {
-            let p = map(mm), touching = pen.pressure > 0.01
+        if let smp = pen.sample {
+            let p = map(smp.mm), touching = smp.pressure > 0.01
+            // halo: bigger when the pen is higher above the surface, stronger with pressure
+            let halo = touching ? 18 + smp.pressure * 18 : 14 + smp.distance * 22
             ZStack {
-                Circle().fill(Theme.warn.opacity(touching ? 0.35 : 0.18)).frame(width: 20 + pen.pressure * 18, height: 20 + pen.pressure * 18)
+                Circle().fill(Theme.warn.opacity(touching ? 0.35 : 0.22 - smp.distance * 0.12)).frame(width: halo, height: halo)
+                // tilt: short line in the direction the pen leans
+                Path { q in
+                    q.move(to: CGPoint(x: 20, y: 20))
+                    q.addLine(to: CGPoint(x: 20 + smp.tiltX / 64 * 18, y: 20 + smp.tiltY / 64 * 18))
+                }
+                .stroke(Theme.warn.opacity(0.9), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .frame(width: 40, height: 40)
                 Circle().fill(.white).frame(width: touching ? 8 : 6, height: touching ? 8 : 6)
                     .overlay(Circle().strokeBorder(Theme.warn, lineWidth: 1.5))
             }

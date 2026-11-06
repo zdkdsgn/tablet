@@ -1,6 +1,7 @@
 import SwiftUI
 import IOKit.hid
 import ServiceManagement
+import Combine
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -27,6 +28,10 @@ final class AppModel: ObservableObject {
     let zoom = ZoomSettings()
     let hud = ModeHUD()
     let penHover = PenHover()
+    let odometer = PenOdometer()
+    let island = NotchIsland()
+    let achievements = Achievements()
+    private var bag = Set<AnyCancellable>()
     let lightSettings = LightSettings()
     private(set) lazy var lights = RingLights(device: device, settings: lightSettings)
 
@@ -47,6 +52,7 @@ final class AppModel: ObservableObject {
     let expressView = ExpressView()
     let keyBehaviour = KeyBehaviour()
     private(set) lazy var keyEngine = KeyPressEngine(settings: keyBehaviour)
+    private(set) lazy var penProfiles = PenProfiles(store: store, filters: penFilters, behaviour: keyBehaviour)
     let usage = UsageMap()
     let reminderSettings = ReminderSettings()
     private(set) lazy var reminders = Reminders(settings: reminderSettings)
@@ -56,6 +62,12 @@ final class AppModel: ObservableObject {
     /// Display + tablet area before "map to window", restored on the next press.
     @Published private(set) var windowMapping: (display: AreaRect, tablet: AreaRect)?
     private var penIsEraser = false
+
+    /// Name of the pen in hand (from its serial), "Pen" until one is seen.
+    var currentPenName: String {
+        if let c = penProfiles.current, let p = penProfiles.pens.first(where: { $0.serial == c }) { return p.name }
+        return L("Pero")
+    }
 
     /// Finger resting on ExpressKeys → overlay with every key's function (the touched one highlighted).
     let sliderSettings = SliderSettings()
@@ -181,7 +193,45 @@ final class AppModel: ObservableObject {
             self.hud.showKey(i, name: self.keyLabels.name(i, for: self.store.aux[i]), shortcut: shortcut)
         }
         device.onTool = { [weak self] eraser in self?.toolChanged(eraser: eraser) }
-        device.onPen = { [weak self] p, pressure in self?.penHover.update(p, pressure: pressure) }
+        device.onPen = { [weak self] s in
+            guard let self else { return }
+            self.penHover.update(s); self.odometer.add(s); self.achievements.sample(s, odo: self.odometer)
+        }
+        achievements.precisionActive = { [weak self] in self?.penFilters.precisionActive ?? false }
+        achievements.onUnlock = { [weak self] a in
+            guard let self else { return }
+            if self.island.available { self.island.message("🏆 " + L(a.title), subtitle: L(a.detail), seconds: 5.5) }
+            else { self.hud.showMessage(symbol: "trophy.fill", title: L(a.title), subtitle: L(a.detail)) }
+            self.lights.play(.sparkle)
+        }
+        island.onVisit = { [weak self] in self?.achievements.unlock("notch") }
+        island.statsProvider = { [weak self] in
+            guard let self else { return ([], nil) }
+            let o = self.odometer, a = self.achievements
+            let items = [(PenOdometer.format(o.today), L("dnes"), "calendar"),
+                         (PenOdometer.format(o.drawn), L("celkem"), "scribble.variable"),
+                         (o.strokes.formatted(), L("tahů"), "hand.draw"),
+                         ("\(a.count)/\(Achievements.all.count)", L("úspěchů"), "trophy.fill")]
+            let footer = a.latest.map { "🏆 " + L($0.title) } ?? PenOdometer.comparison(o.drawn).map { String(format: L("To je jako %@."), $0) }
+            return (items, footer)
+        }
+        odometer.currentPen = { [weak self] in self?.penProfiles.current }
+        odometer.onMilestone = { [weak self] m in
+            guard let self else { return }
+            self.island.message(PenOdometer.milestoneText(m), subtitle: PenOdometer.pencilUsed(self.odometer.drawn))
+        }
+        penHover.$sample
+            .sink { [weak self] s in
+                guard let self else { return }
+                self.island.pen(s, name: self.currentPenName, today: PenOdometer.format(self.odometer.today))
+            }
+            .store(in: &bag)
+        device.onPenIdentity = { [weak self] id, serial in
+            guard let self else { return }
+            self.penProfiles.penEntered(id: id, serial: serial)
+            self.achievements.pensSeen(self.penProfiles.pens.count)
+        }
+        penProfiles.onSwitch = { [weak self] pen in self?.hud.showMessage(symbol: "pencil.tip", title: pen.name, subtitle: L("Nastavení tohoto pera")) }
         edgeFix.onDraw = { [weak self] p in self?.recordDraw(p) }
         reminders.lastActivity = { [weak self] in self?.edgeFix.lastActivity ?? .distantPast }
         reminders.alert = { [weak self] anim, symbol, title, text in self?.alert(anim, symbol: symbol, title: title, subtitle: text) }
@@ -304,6 +354,7 @@ final class AppModel: ObservableObject {
     /// Pen flipped: eraser end → eraser tool key, tip → pen tool key (only on a change).
     private func toolChanged(eraser: Bool) {
         defer { penIsEraser = eraser }
+        if eraser && !penIsEraser { achievements.eraserFlipped() }
         guard keyBehaviour.eraserSwitch, eraser != penIsEraser else { return }
         guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
         KeySender.tap(eraser ? keyBehaviour.eraserKeys : keyBehaviour.penKeys)

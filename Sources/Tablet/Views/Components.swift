@@ -111,6 +111,27 @@ struct Banner: View {
     }
 }
 
+/// Battery level of the wireless kit as an SF Symbol name.
+func batterySymbol(_ level: Int, charging: Bool) -> String {
+    if charging { return "battery.100.bolt" }
+    switch level { case 88...: return "battery.100"; case 63...: return "battery.75"; case 38...: return "battery.50"; case 13...: return "battery.25"; default: return "battery.0" }
+}
+
+/// "🔋 80 %" label for the tablet's wireless kit; nothing without the kit.
+struct TabletBatteryLabel: View {
+    @EnvironmentObject var device: DeviceMonitor
+    var body: some View {
+        if let b = device.battery {
+            HStack(spacing: 3) {
+                Image(systemName: batterySymbol(b, charging: device.charging))
+                    .foregroundStyle(b <= 15 && !device.charging ? Color(hex: 0xFF453A) : Theme.secondary)
+                Text("\(b) %").monospacedDigit()
+            }
+            .help(device.charging ? L("Baterie bezdrátového modulu se nabíjí") : L("Baterie bezdrátového modulu"))
+        }
+    }
+}
+
 /// Quiet info strip (not an error), e.g. "the tablet is not connected".
 struct InfoStrip: View {
     var symbol: String

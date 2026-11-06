@@ -16,17 +16,24 @@ final class TouchSettings: ObservableObject {
     @Published var missionControl: Bool { didSet { d.set(missionControl, forKey: "touch.mission") } }
     @Published var palmRejection: Bool { didSet { d.set(palmRejection, forKey: "touch.palm") } }
     @Published var speed: Double { didSet { d.set(speed, forKey: "touch.speed") } }
+    /// Ignore touch while a contact larger than `palmSize` (the tablet's contact size units) is on the tablet.
+    @Published var palmBySize: Bool { didSet { d.set(palmBySize, forKey: "touch.palmBySize") } }
+    @Published var palmSize: Double { didSet { d.set(palmSize, forKey: "touch.palmSize") } }
+
+    func isPalm(_ t: TouchPoint) -> Bool { palmBySize && t.size >= palmSize }
 
     init() {
         d.register(defaults: ["touch.enabled": true, "touch.move": true, "touch.tap": true, "touch.rightTap": true,
                               "touch.scroll": true, "touch.natural": true, "touch.pinch": true, "touch.swipe": true,
-                              "touch.mission": true, "touch.palm": true, "touch.speed": 6.0])
+                              "touch.mission": true, "touch.palm": true, "touch.speed": 6.0,
+                              "touch.palmBySize": false, "touch.palmSize": 12.0])
         enabled = d.bool(forKey: "touch.enabled"); move = d.bool(forKey: "touch.move")
         tap = d.bool(forKey: "touch.tap"); rightTap = d.bool(forKey: "touch.rightTap")
         scroll = d.bool(forKey: "touch.scroll"); naturalScroll = d.bool(forKey: "touch.natural")
         pinch = d.bool(forKey: "touch.pinch"); swipeSpaces = d.bool(forKey: "touch.swipe")
         missionControl = d.bool(forKey: "touch.mission"); palmRejection = d.bool(forKey: "touch.palm")
         speed = d.double(forKey: "touch.speed")
+        palmBySize = d.bool(forKey: "touch.palmBySize"); palmSize = d.double(forKey: "touch.palmSize")
     }
 }
 
@@ -44,6 +51,7 @@ final class TouchEngine {
 
     private enum Mode { case idle, undecided, move, scroll, pinch, swipe, done }
     private var mode: Mode = .idle
+    private var palmDown = false
     private var startTime = Date()
     private var maxFingers = 0
     private var travelled = 0.0           // mm, for tap detection
@@ -75,6 +83,12 @@ final class TouchEngine {
         guard settings.enabled else { reset(); return }
         if settings.palmRejection, Date() < penActiveUntil || touches.count > 4 {
             reset(); mode = touches.isEmpty ? .idle : .done; return
+        }
+        // a palm (large contact) on the tablet: ignore everything until all fingers are lifted
+        if touches.contains(where: settings.isPalm) { palmDown = true }
+        if palmDown {
+            if touches.isEmpty { palmDown = false; reset(); mode = .idle } else { reset(); mode = .done }
+            return
         }
         if touches.isEmpty { finish(); return }
 

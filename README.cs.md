@@ -68,6 +68,21 @@ a při prvním spuštění povolte v **Nastavení systému → Soukromí a zabez
   pro Ovládací centrum a lištu na macOS 26+.
 - **Záloha:** všechno nastavení a předvolby v jednom souboru `.tabletsettings`.
 - **Aktualizace:** Tablet se podívá do GitHub Releases, ověří SHA-256 DMG a sám se nahradí.
+- **Rozpoznání pera a nastavení pro každé pero:** každé pero se pozná podle sériového čísla a může mít vlastní
+  křivku tlaku, tlačítka i citlivost klepnutí.
+- **Citlivost klepnutí a klidné klepnutí:** posuvník prahu hrotu s živým ukazatelem posledního ťuknutí a klidné
+  klepnutí, kdy kurzor po dotyku hrotu chvilku stojí, takže ťuknutí klikne a netáhne.
+- **Výřez MacBooku:** živý náklon pera z boku i shora, dokud je pero nad tabletem, statistiky po najetí perem do
+  výřezu, milníky a úspěchy.
+- **Tachometr a úspěchy:** kolik pero ujelo dnes a celkem, s vtipnými přirovnáními a 22 úspěchy (některé tajné).
+- **Tahy:** všechny dnešní tahy na bílém papíře, s přehráním, barvami podle času a uložením do PNG (drží se 30 dní).
+- **Bezdrátová sada:** stav baterie v postranním panelu a v liště, upozornění při 15 % a 5 % a při nabíjení,
+  a úspora baterie, kdy světla zhasnou po 30 s bez práce.
+- **Dotyk:** velikost doteku, poznání dlaně podle velikosti a boční vypínač dotyku.
+- **Plocha a monitor:** náhledy zařízení s živou tečkou pera, skutečná velikost 1:1, posun šipkami a ⌘Z.
+- **Vzhled:** světlý, tmavý, nebo podle macOS.
+- **Průvodce nastavením:** oprávnění, monitor a citlivost pera krok za krokem při prvním spuštění (Obecné →
+  Průvodce nastavením, nebo `tablet://setup`).
 - **Homebrew:** `brew install --cask zdkdsgn/tap/tablet` (cask v `Casks/tablet.rb`).
 - **Jazyk:** čeština a angličtina podle jazyka macOS. Překlady jsou v `Resources/en.lproj`
   a generuje je skript `Resources/translations-en.py`.

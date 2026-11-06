@@ -22,6 +22,8 @@ final class PenTap {
     private var lastEventTime = Date.distantPast
     private var precisionAnchor: (raw: CGPoint, out: CGPoint)?
     private var lastRaw: CGPoint?
+    /// Where and when the tip touched down (calm tap).
+    private var calm: (p: CGPoint, t: Date)?
 
     var enabled: Bool { tap != nil }
     /// Raw pen location (CG) of every drawing event (pressure > 0) – for the usage map.
@@ -132,6 +134,29 @@ final class PenTap {
         if p.y <= r.minY { p.y = r.minY; if !hasNeighbour(r, below: false) { dy = min(dy, -push) } }
         if p.x >= maxX { p.x = maxX; if !hasNeighbour(r, right: true) { dx = max(dx, push) } }
         if p.x <= r.minX { p.x = r.minX; if !hasNeighbour(r, right: false) { dx = min(dx, -push) } }
+
+        // 5. calm tap: hold the cursor where the tip touched down until it really moves or a moment passes
+        if filters.calmTap > 0 {
+            switch type {
+            case .leftMouseDown:
+                calm = (p, now)
+            case .leftMouseDragged:
+                if let c = calm {
+                    if hypot(p.x - c.p.x, p.y - c.p.y) <= filters.calmRadius && now.timeIntervalSince(c.t) < filters.calmTime {
+                        p = c.p; dx = 0; dy = 0
+                    } else {
+                        calm = nil   // a real stroke – let go (the cursor catches up from here)
+                    }
+                }
+            case .leftMouseUp:
+                if let c = calm, hypot(p.x - c.p.x, p.y - c.p.y) <= filters.calmRadius * 1.5 { p = c.p; dx = 0; dy = 0 }
+                calm = nil
+            default:
+                calm = nil
+            }
+        } else {
+            calm = nil
+        }
 
         event.location = p
         event.setDoubleValueField(.mouseEventDeltaX, value: dx)

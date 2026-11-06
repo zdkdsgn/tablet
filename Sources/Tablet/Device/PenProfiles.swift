@@ -83,7 +83,7 @@ final class PenProfiles: ObservableObject {
         guard let i = pens.firstIndex(where: { $0.serial == serial }) else { return }
         let dict: [String: Any] = [
             "gamma": filters.gamma, "maxInput": filters.maxInput, "smoothing": filters.smoothing,
-            "tipThreshold": store.tipThreshold,
+            "tipThreshold": store.tipThreshold, "calmTap": filters.calmTap,
             "penButtons": store.penButtons.map(\.json), "eraser": store.eraser.json,
             "eraserSwitch": behaviour.eraserSwitch, "eraserKeys": behaviour.eraserKeys, "penKeys": behaviour.penKeys,
         ]
@@ -97,6 +97,7 @@ final class PenProfiles: ObservableObject {
         if let v = s["maxInput"] as? Double { filters.maxInput = v }
         if let v = s["smoothing"] as? Double { filters.smoothing = v }
         if let v = s["tipThreshold"] as? Double { store.tipThreshold = v }
+        if let v = s["calmTap"] as? Int { filters.calmTap = v }
         if let v = s["penButtons"] as? [Any] { store.penButtons = (0..<store.penButtons.count).map { BindingAction(json: v.indices.contains($0) ? v[$0] : nil) } }
         if let v = s["eraser"] { store.eraser = BindingAction(json: v) }
         if let v = s["eraserSwitch"] as? Bool { behaviour.eraserSwitch = v }

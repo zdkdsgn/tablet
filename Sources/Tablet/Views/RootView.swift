@@ -87,6 +87,11 @@ struct RootView: View {
         .background(Theme.window)
         .font(.system(size: 13))
         .onAppear { model.openMain = { [openWindow] in openWindow(id: "main") } }
+        .sheet(isPresented: $model.showOnboarding) {
+            OnboardingView(model: model, store: store, device: device, pen: model.penFilters, hover: model.penHover) {
+                model.showOnboarding = false
+            }
+        }
     }
 }
 

@@ -43,6 +43,14 @@ struct LightsView: View {
                 LightsPreview()
             }
             VStack(spacing: 20) {
+                Card(title: L("Bezdrátová sada"), trailing: AnyView(TabletBatteryLabel().font(.system(size: 12)).foregroundStyle(Theme.secondary))) {
+                    SettingRow(title: L("Šetřit baterii"), caption: L("Na baterii světla zhasnou po 30 s bez práce a rozsvítí se, jakmile vezmete pero nebo sáhnete na tlačítka")) {
+                        Toggle("", isOn: $lights.batterySaver).labelsHidden().toggleStyle(.switch)
+                    }
+                    SettingRow(title: L("Upozornit na slabou baterii"), caption: L("Zpráva ve výřezu při 15 % a 5 %, a když se tablet nabíjí nebo je nabitý")) {
+                        Toggle("", isOn: $lights.tabletBatteryAlert).labelsHidden().toggleStyle(.switch)
+                    }
+                }
                 Card(title: L("Upozornění světly")) {
                     SettingRow(title: L("Slabá baterie"), caption: String(format: L("Bliknou světla, když baterie Macu klesne pod %d %%"), rem.batteryLevel)) {
                         Toggle("", isOn: $rem.batteryAlert).labelsHidden().toggleStyle(.switch)

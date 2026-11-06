@@ -154,6 +154,8 @@ final class AppModel: ObservableObject {
     }
 
     @Published var accessibility = TouchEngine.accessibilityGranted
+    /// First-run guide (also opened from Obecné).
+    @Published var showOnboarding = false
     @Published var autoPresets: Bool = UserDefaults.standard.bool(forKey: "autoPresets") {
         didSet { UserDefaults.standard.set(autoPresets, forKey: "autoPresets") }
     }
@@ -197,6 +199,7 @@ final class AppModel: ObservableObject {
         device.onPen = { [weak self] s in
             guard let self else { return }
             self.penHover.update(s); self.odometer.add(s); self.achievements.sample(s, odo: self.odometer)
+            if s != nil { self.lights.penActivity() }
             self.strokeLog.add(s)
         }
         achievements.precisionActive = { [weak self] in self?.penFilters.precisionActive ?? false }
@@ -229,6 +232,16 @@ final class AppModel: ObservableObject {
                                 flip: (self.store.tabletArea.rotation) == 180)
             }
             .store(in: &bag)
+        device.$battery.combineLatest(device.$charging)
+            .removeDuplicates { $0 == $1 }
+            .sink { [weak self] level, charging in self?.batteryChanged(level, charging: charging) }
+            .store(in: &bag)
+        lightSettings.$batterySaver
+            .sink { [weak self] on in
+                guard let self else { return }
+                self.lights.saving = on && self.device.battery != nil && !self.device.charging
+            }
+            .store(in: &bag)
         device.onPenIdentity = { [weak self] id, serial in
             guard let self else { return }
             self.penProfiles.penEntered(id: id, serial: serial)
@@ -257,6 +270,7 @@ final class AppModel: ObservableObject {
         device.setTarget(store.tablet)
         store.onTabletChange = { [weak self] t in self?.device.setTarget(t) }
         device.start()
+        if !UserDefaults.standard.bool(forKey: "loginItemConfigured") { showOnboarding = true }   // fresh install
         // first run: start at login by default (the user can turn it off in Předvolby)
         if !UserDefaults.standard.bool(forKey: "loginItemConfigured") {
             UserDefaults.standard.set(true, forKey: "loginItemConfigured")
@@ -277,6 +291,41 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated { self?.appActivated(app) }
+        }
+    }
+
+    /// Lowest warning already shown for this discharge (reset when charging).
+    private var batteryWarned = 101
+    private var batteryWasCharging: Bool?
+    private var batteryFullShown = false
+
+    /// Wireless kit battery: battery saver for the lights, low-battery warnings, plugged in / charged notices.
+    private func batteryChanged(_ level: Int?, charging: Bool) {
+        lights.saving = lightSettings.batterySaver && level != nil && !charging
+        guard let level else { batteryWasCharging = nil; return }
+        defer { batteryWasCharging = charging }
+        guard lightSettings.tabletBatteryAlert else { return }
+        func notice(_ symbol: String, _ title: String, _ text: String, _ anim: LEDAnimation?) {
+            if island.available { island.message(title, subtitle: text, seconds: 6) }
+            else { hud.showMessage(symbol: symbol, title: title, subtitle: text) }
+            if let anim { lights.play(anim) }
+        }
+        if charging {
+            batteryWarned = 101
+            if batteryWasCharging == false { notice("battery.100percent.bolt", "🔌 " + L("Tablet se nabíjí"), String(format: L("Baterie %d %%"), level), .wave) }
+            if level >= 100 && !batteryFullShown {
+                batteryFullShown = true
+                notice("battery.100percent", "🔋 " + L("Tablet je nabitý"), L("Kabel můžete odpojit."), nil)
+            }
+            return
+        }
+        if level < 95 { batteryFullShown = false }
+        if level >= 25 { batteryWarned = 101 }
+        for t in [5, 15] where level <= t && batteryWarned > t {
+            batteryWarned = t
+            notice("battery.25percent", "🪫 " + String(format: L("Tablet má jen %d %% baterie"), level),
+                   t == 5 ? L("Připojte kabel USB-C, brzy se vypne.") : L("Až budete mít chvilku, připojte kabel USB-C."), .heartbeat)
+            break
         }
     }
 

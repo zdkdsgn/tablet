@@ -12,11 +12,18 @@ final class PenFilters: ObservableObject {
     @Published var smoothing: Double { didSet { d.set(smoothing, forKey: "pen.smoothing") } }
     /// Precision mode: how much finer the movement is (0.15…0.6 of normal).
     @Published var precisionScale: Double { didSet { d.set(precisionScale, forKey: "pen.precisionScale") } }
+    /// Calm tap 0 (off) … 3: right after the tip touches down the cursor holds still, so a tap clicks
+    /// instead of making a tiny drag.
+    @Published var calmTap: Int { didSet { d.set(calmTap, forKey: "pen.calmTap") } }
+    /// How far (points) and how long (s) the cursor holds still after the tip touches down.
+    var calmRadius: Double { [0, 3, 6, 10][min(max(calmTap, 0), 3)] }
+    var calmTime: Double { [0, 0.15, 0.25, 0.4][min(max(calmTap, 0), 3)] }
     /// Precision mode is active (held ExpressKey or toggled).
     @Published var precisionActive = false
 
     init() {
-        d.register(defaults: ["pen.gamma": 1.0, "pen.maxInput": 1.0, "pen.smoothing": 0.0, "pen.precisionScale": 0.3])
+        d.register(defaults: ["pen.gamma": 1.0, "pen.maxInput": 1.0, "pen.smoothing": 0.0, "pen.precisionScale": 0.3, "pen.calmTap": 2])
+        calmTap = d.integer(forKey: "pen.calmTap")
         gamma = d.double(forKey: "pen.gamma")
         maxInput = d.double(forKey: "pen.maxInput")
         smoothing = d.double(forKey: "pen.smoothing")

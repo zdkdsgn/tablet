@@ -51,9 +51,15 @@ struct PenView: View {
                             Slider(value: Binding { 1 - pen.precisionScale } set: { pen.precisionScale = 1 - $0 }, in: 0.4...0.85)
                             Text("Zapnete ho podržením ExpressKey s funkcí Přesný režim (obrazovka Tablet).").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                         }
+                        TipThresholdSetting(threshold: $store.tipThreshold, hover: model.penHover)
                         VStack(alignment: .leading, spacing: 6) {
-                            HStack { Text("Práh dotyku hrotu"); Spacer(); Text("\(Int(store.tipThreshold)) %").foregroundStyle(Theme.secondary) }
-                            Slider(value: $store.tipThreshold, in: 0...30, step: 1)
+                            HStack { Text("Klidné klepnutí"); Spacer() }
+                            Picker("", selection: $pen.calmTap) {
+                                Text("Vypnuto").tag(0); Text("Slabě").tag(1); Text("Středně").tag(2); Text("Silně").tag(3)
+                            }
+                            .pickerStyle(.segmented).labelsHidden()
+                            Text("Po dotyku hrotu kurzor chvilku stojí, takže ťuknutí klikne a netáhne. Silněji = klidnější klikání, ale začátek čáry se o kousek opozdí.")
+                                .font(.system(size: 12)).foregroundStyle(Theme.secondary)
                         }
                         HStack(spacing: 12) {
                             Toggle("Tlak", isOn: Binding { !store.disablePressure } set: { store.disablePressure = !$0 })
@@ -96,6 +102,70 @@ struct PenView: View {
         }
         .padding(2)
         .background(Theme.control, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// How hard the tip must press before it counts as a click, with a live check of the last tap.
+struct TipThresholdSetting: View {
+    @Binding var threshold: Double
+    @ObservedObject var hover: PenHover
+    @State private var shownPeak: Double?
+    @State private var fade: DispatchWorkItem?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Citlivost klepnutí hrotem")
+                Spacer()
+                Text(levelName + " · " + "\(Int(threshold)) %").monospacedDigit().foregroundStyle(Theme.secondary)
+            }
+            Slider(value: Binding { threshold } set: { threshold = $0.rounded() }, in: 0...60) {
+                EmptyView()
+            } minimumValueLabel: {
+                Text("Citlivé").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+            } maximumValueLabel: {
+                Text("Pevné").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+            }
+            // meter: the last tap's strongest pressure against the threshold
+            GeometryReader { g in
+                let w = g.size.width
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.well)
+                    if let p = shownPeak {
+                        Capsule().fill(p * 100 > threshold ? Theme.ok : Color(hex: 0xFF9F0A))
+                            .frame(width: max(6, w * p))
+                    }
+                    Rectangle().fill(Color.primary.opacity(0.8)).frame(width: 2, height: 14)
+                        .offset(x: w * threshold / 100 - 1)
+                }
+                .frame(height: 8)
+                .frame(maxHeight: .infinity)
+            }
+            .frame(height: 14)
+            .animation(.snappy(duration: 0.2), value: shownPeak)
+            .animation(.snappy(duration: 0.2), value: threshold)
+            Text(caption).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+        }
+        .onReceive(hover.$lastPeak.compactMap { $0 }) { p in
+            shownPeak = p
+            fade?.cancel()
+            let w = DispatchWorkItem { shownPeak = nil }
+            fade = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: w)
+        }
+    }
+
+    private var levelName: String {
+        switch threshold { case ..<3: return L("Velmi citlivé"); case ..<10: return L("Citlivé"); case ..<25: return L("Střední"); default: return L("Pevné") }
+    }
+
+    private var caption: String {
+        guard let p = shownPeak else {
+            return L("Jak silně musíte hrotem přitlačit, aby to bylo kliknutí. Ťukněte perem na tablet a uvidíte, jestli ťuk projde (čárka = práh).")
+        }
+        return p * 100 > threshold
+            ? String(format: L("Ťuk %d %% – kliknutí ✓. Má-li lehký dotyk neklikat, posuňte práh nad něj."), Int(p * 100))
+            : String(format: L("Ťuk %d %% – pod prahem, žádné kliknutí."), Int(p * 100))
     }
 }
 

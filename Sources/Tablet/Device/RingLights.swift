@@ -95,6 +95,10 @@ final class LightSettings: ObservableObject {
     @Published var breatheCorners: Bool { didSet { d.set(breatheCorners, forKey: "led.breathe") } }
     /// Lights stay dimmed (or off) until a finger touches the ExpressKeys or the ring.
     @Published var dimUntilTouch: Bool { didSet { d.set(dimUntilTouch, forKey: "led.dim") } }
+    /// On the wireless kit: lights go out after a while without work and come back with the pen or a touch.
+    @Published var batterySaver: Bool { didSet { d.set(batterySaver, forKey: "led.batterySaver") } }
+    /// Notice in the notch when the wireless kit's battery runs low (and when charged).
+    @Published var tabletBatteryAlert: Bool { didSet { d.set(tabletBatteryAlert, forKey: "led.tabletBattery") } }
     /// Level while dimmed: 3 = off, 0 = low.
     @Published var dimLevel: Int { didSet { d.set(dimLevel, forKey: "led.dimLevel") } }
 
@@ -102,7 +106,10 @@ final class LightSettings: ObservableObject {
         d.register(defaults: ["led.enabled": true, "led.brightness": 2, "led.corners": true, "led.cornerBrightness": 0,
                               "led.egg": false, "led.longPress": "random", "led.speed": 1.0,
                               "led.modeAnim": true, "led.welcome": false, "led.breathe": false,
-                              "led.dim": false, "led.dimLevel": 3])
+                              "led.dim": false, "led.dimLevel": 3,
+                              "led.batterySaver": true, "led.tabletBattery": true])
+        batterySaver = d.bool(forKey: "led.batterySaver")
+        tabletBatteryAlert = d.bool(forKey: "led.tabletBattery")
         dimUntilTouch = d.bool(forKey: "led.dim")
         dimLevel = d.integer(forKey: "led.dimLevel")
         enabled = d.bool(forKey: "led.enabled")
@@ -144,11 +151,30 @@ final class RingLights {
     private var awake = false
     private var sleepTimer: Timer?
 
+    /// Battery saver is on and the tablet runs on the wireless kit's battery.
+    var saving = false {
+        didSet {
+            guard saving != oldValue else { return }
+            awake = false
+            if saving { wake(for: Self.saverDelay) } else { sleepTimer?.invalidate(); show(current) }
+        }
+    }
+    static let saverDelay = 30.0
+    private var lastPenWake = Date.distantPast
+
+    /// The pen is being used: with the battery saver, keep the lights on (checked at most once a second).
+    func penActivity() {
+        guard saving, !settings.dimUntilTouch, Date().timeIntervalSince(lastPenWake) > 1 else { return }
+        lastPenWake = Date()
+        wake(for: Self.saverDelay)
+    }
+
     /// A finger touched the keys or the ring: light up fully, dim again a few seconds later.
-    func wake() {
-        guard settings.dimUntilTouch else { return }
+    func wake(for seconds: Double? = nil) {
+        guard settings.dimUntilTouch || saving else { return }
         sleepTimer?.invalidate()
-        sleepTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: false) { [weak self] _ in
+        let delay = seconds ?? (settings.dimUntilTouch ? 3.5 : Self.saverDelay)
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.awake = false
@@ -161,9 +187,10 @@ final class RingLights {
     func show(_ index: Int) {
         current = index
         guard !playing else { return }
-        if settings.dimUntilTouch && !awake {
-            leds.setStatic(led: index, ring: settings.enabled ? settings.dimLevel : 3,
-                           corners: settings.cornersEnabled ? settings.dimLevel : 3)
+        if (settings.dimUntilTouch || saving) && !awake {
+            let level = settings.dimUntilTouch ? settings.dimLevel : 3   // battery saver: off
+            leds.setStatic(led: index, ring: settings.enabled ? level : 3,
+                           corners: settings.cornersEnabled ? level : 3)
             return
         }
         if settings.breatheCorners && settings.cornersEnabled {

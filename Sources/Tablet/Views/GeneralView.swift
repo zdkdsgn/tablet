@@ -60,6 +60,9 @@ struct GeneralView: View {
                             Toggle("", isOn: $island).labelsHidden().toggleStyle(.switch)
                         }
                     }
+                    SettingRow(title: L("Průvodce nastavením"), caption: L("Oprávnění, monitor a citlivost pera krok za krokem")) {
+                        Button("Spustit průvodce") { model.showOnboarding = true }
+                    }
                     SettingRow(title: L("Vzhled"), caption: L("Světlý, tmavý, nebo podle nastavení Macu")) {
                         Picker("", selection: $appearance) {
                             ForEach(AppearanceChoice.allCases) { Text($0.title).tag($0.rawValue) }

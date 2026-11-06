@@ -53,12 +53,9 @@ struct GeneralView: View {
                         Text("Na dalším Macu stačí v Terminálu:").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                         copyRow("brew install --cask zdkdsgn/tap/tablet")
                     }
-                    SettingRow(title: L("Animace ve výřezu"), caption: L("Když vezmete pero do ruky, z výřezu MacBooku vykoukne jeho náklon a přítlak. Najedete-li perem do výřezu, ukáže statistiky. Ozve se i při milnících a úspěších.")) {
+                    SettingRow(title: L("Animace ve výřezu"), caption: L("Dokud je pero nad tabletem, výřez MacBooku živě ukazuje jeho náklon – z boku i shora. Najedete-li perem do výřezu, ukáže statistiky. Ozve se i při milnících a úspěších.")) {
                         HStack(spacing: 8) {
-                            Button("Ukázat") {
-                                model.island.message(PenOdometer.milestoneText(PenOdometer.milestones.last { $0 * 1000 <= model.odometer.drawn } ?? 1),
-                                                     subtitle: PenOdometer.pencilUsed(model.odometer.drawn))
-                            }
+                            Button("Ukázat") { model.island.demoTilt() }
                             .disabled(!island)
                             Toggle("", isOn: $island).labelsHidden().toggleStyle(.switch)
                         }

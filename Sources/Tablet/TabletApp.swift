@@ -225,7 +225,8 @@ final class AppModel: ObservableObject {
         penHover.$sample
             .sink { [weak self] s in
                 guard let self else { return }
-                self.island.pen(s, name: self.currentPenName, today: PenOdometer.format(self.odometer.today))
+                self.island.pen(s, name: self.currentPenName, today: PenOdometer.format(self.odometer.today),
+                                flip: (self.store.tabletArea.rotation) == 180)
             }
             .store(in: &bag)
         device.onPenIdentity = { [weak self] id, serial in

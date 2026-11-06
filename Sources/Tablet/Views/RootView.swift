@@ -1,12 +1,13 @@
 import SwiftUI
 
 enum Section: String, CaseIterable, Identifiable {
-    case tablet, pen, touch, lights, area, presets, general
+    case tablet, pen, strokes, touch, lights, area, presets, general
     var id: String { rawValue }
     var title: String {
         switch self {
         case .tablet: return L("Tablet")
         case .pen: return L("Pero")
+        case .strokes: return L("Tahy")
         case .touch: return L("Dotyk")
         case .lights: return L("Světla")
         case .area: return L("Plocha a monitor")
@@ -18,6 +19,7 @@ enum Section: String, CaseIterable, Identifiable {
         switch self {
         case .tablet: return "rectangle.inset.filled"
         case .pen: return "pencil.tip"
+        case .strokes: return "scribble.variable"
         case .touch: return "hand.point.up.left"
         case .lights: return "lightbulb"
         case .area: return "display"
@@ -29,6 +31,7 @@ enum Section: String, CaseIterable, Identifiable {
         switch self {
         case .tablet: return L("Klikněte na tlačítko nebo kolečko a nastavte, co dělá")
         case .pen: return L("Grip Pen · tlak 2048 úrovní · náklon")
+        case .strokes: return L("Co jste nakreslili – tah po tahu")
         case .touch: return L("Ovládání prsty jako na trackpadu")
         case .lights: return L("Světýlka kolečka a rohů plochy")
         case .area: return L("Kterou část tabletu použít a na kterou obrazovku ji mapovat")
@@ -69,6 +72,7 @@ struct RootView: View {
                     switch section {
                     case .tablet: TabletView()
                     case .pen: PenView()
+                    case .strokes: StrokesView()
                     case .touch: TouchView()
                     case .lights: LightsView()
                     case .area: AreaView()

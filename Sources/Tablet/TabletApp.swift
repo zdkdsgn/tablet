@@ -31,6 +31,7 @@ final class AppModel: ObservableObject {
     let odometer = PenOdometer()
     let island = NotchIsland()
     let achievements = Achievements()
+    let strokeLog = StrokeLog()
     private var bag = Set<AnyCancellable>()
     let lightSettings = LightSettings()
     private(set) lazy var lights = RingLights(device: device, settings: lightSettings)
@@ -196,6 +197,7 @@ final class AppModel: ObservableObject {
         device.onPen = { [weak self] s in
             guard let self else { return }
             self.penHover.update(s); self.odometer.add(s); self.achievements.sample(s, odo: self.odometer)
+            self.strokeLog.add(s)
         }
         achievements.precisionActive = { [weak self] in self?.penFilters.precisionActive ?? false }
         achievements.onUnlock = { [weak self] a in

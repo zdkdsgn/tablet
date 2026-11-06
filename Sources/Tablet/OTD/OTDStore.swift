@@ -331,9 +331,10 @@ final class OTDStore: ObservableObject {
         refreshPresets()
     }
 
-    func applyPreset(_ name: String) {
+    func applyPreset(_ name: String, undoable: Bool = true) {
         let src = presetsDir.appendingPathComponent(name + ".json")
         guard FileManager.default.fileExists(atPath: src.path), name != activePreset || !loaded else { return }
+        if undoable { checkpoint(String(format: L("Předvolba %@"), name)) }
         do {
             let data = try Data(contentsOf: src)
             try data.write(to: settingsURL, options: .atomic)
@@ -341,6 +342,31 @@ final class OTDStore: ObservableObject {
             pushToDaemon()
             setActive(name)
         } catch { lastError = "Předvolbu nejde načíst: \(error.localizedDescription)" }
+    }
+
+    // MARK: - Undo
+
+    struct Snapshot { var label: String; var data: Data?; var tablet: AreaRect; var display: AreaRect; var preset: String? }
+    private var undoStack: [Snapshot] = []
+    /// Last undoable change, shown in the "Undo" toast; nil = nothing to show.
+    @Published var undoToast: String?
+    var canUndo: Bool { !undoStack.isEmpty }
+
+    /// Remembers the current settings before a bigger change (preset, suggested area, 1 : 1, typed size…).
+    func checkpoint(_ label: String) {
+        if loaded { save() }
+        undoStack.append(Snapshot(label: label, data: try? Data(contentsOf: settingsURL), tablet: tabletArea, display: displayArea, preset: activePreset))
+        if undoStack.count > 20 { undoStack.removeFirst() }
+        undoToast = label
+    }
+
+    func undo() {
+        guard let s = undoStack.popLast() else { return }
+        if let d = s.data, (try? d.write(to: settingsURL, options: .atomic)) != nil { reload() }
+        setActive(s.preset)   // before saving, so the restored settings go to the preset they came from
+        tabletArea = s.tablet; displayArea = s.display
+        save()
+        undoToast = nil
     }
 
     func deletePreset(_ name: String) {

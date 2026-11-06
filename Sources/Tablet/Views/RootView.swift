@@ -61,6 +61,9 @@ struct RootView: View {
                 if let e = store.lastError {
                     Banner(text: e, button: L("Zkusit znovu")) { store.reload(); store.startDaemon() }
                         .padding([.horizontal, .top], 20)
+                } else if !device.connected && section != .general {
+                    InfoStrip(symbol: "cable.connector.slash", text: L("Tablet není připojený. Nastavení se uloží a použije, jakmile ho připojíte."))
+                        .padding([.horizontal, .top], 20)
                 }
                 Group {
                     switch section {
@@ -74,6 +77,7 @@ struct RootView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .bottom) { UndoToast() }
             }
         }
         .background(Theme.window)
@@ -91,7 +95,7 @@ struct Sidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 10) {
-                TabletGlyph()
+                TabletGlyph().environment(\.colorScheme, .dark)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(store.tablet.displayName).fontWeight(.semibold).lineLimit(1).minimumScaleFactor(0.7)
                     HStack(spacing: 5) {

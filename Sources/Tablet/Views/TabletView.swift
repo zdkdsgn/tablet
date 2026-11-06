@@ -443,11 +443,15 @@ private struct TabletStage: View {
     }
 
     /// The tablet itself (body, active area, keys, ring), positioned by `g`.
-    @ViewBuilder private func drawing(_ geo: Geometry) -> some View {
-        body(geo)
-        activeArea(geo)
-        ForEach(0..<store.aux.count, id: \.self) { i in key(i, geo) }
-        if store.tablet.hasWheel { ring(geo) }
+    /// The tablet itself – always drawn dark, like the real one.
+    private func drawing(_ geo: Geometry) -> some View {
+        Group {
+            body(geo)
+            activeArea(geo)
+            ForEach(0..<store.aux.count, id: \.self) { i in key(i, geo) }
+            if store.tablet.hasWheel { ring(geo) }
+        }
+        .environment(\.colorScheme, .dark)
     }
 
     private func legendRow(_ i: Int) -> some View {

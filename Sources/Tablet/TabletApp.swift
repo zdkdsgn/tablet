@@ -26,6 +26,7 @@ final class AppModel: ObservableObject {
     private(set) lazy var engine = TouchEngine(settings: touch)
     let zoom = ZoomSettings()
     let hud = ModeHUD()
+    let penHover = PenHover()
     let lightSettings = LightSettings()
     private(set) lazy var lights = RingLights(device: device, settings: lightSettings)
 
@@ -180,6 +181,7 @@ final class AppModel: ObservableObject {
             self.hud.showKey(i, name: self.keyLabels.name(i, for: self.store.aux[i]), shortcut: shortcut)
         }
         device.onTool = { [weak self] eraser in self?.toolChanged(eraser: eraser) }
+        device.onPen = { [weak self] p, pressure in self?.penHover.update(p, pressure: pressure) }
         edgeFix.onDraw = { [weak self] p in self?.recordDraw(p) }
         reminders.lastActivity = { [weak self] in self?.edgeFix.lastActivity ?? .distantPast }
         reminders.alert = { [weak self] anim, symbol, title, text in self?.alert(anim, symbol: symbol, title: title, subtitle: text) }
@@ -249,8 +251,8 @@ final class AppModel: ObservableObject {
         }
         guard autoPresets, let name = app.localizedName else { return }
         let match = store.presets.first { name.localizedCaseInsensitiveContains($0) || $0.localizedCaseInsensitiveContains(name) }
-        if let m = match { store.applyPreset(m) }
-        else if store.presets.contains("Výchozí") { store.applyPreset("Výchozí") }
+        if let m = match { store.applyPreset(m, undoable: false) }
+        else if store.presets.contains("Výchozí") { store.applyPreset("Výchozí", undoable: false) }
     }
 
     // MARK: - New functions (1.2)
@@ -359,11 +361,24 @@ struct TabletMain: App {
                 .environmentObject(model.reminderSettings)
                 .environmentObject(model.reminders)
                 .environmentObject(model.updater)
-                .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 760)
+        .commands {
+            CommandGroup(replacing: .undoRedo) {
+                Button(L("Zpět")) {
+                    // text fields keep their own undo; everything else undoes the last bigger settings change
+                    if let tv = NSApp.keyWindow?.firstResponder as? NSTextView, tv.undoManager?.canUndo == true { tv.undoManager?.undo() }
+                    else { withAnimation(.snappy) { model.store.undo() } }
+                }
+                .keyboardShortcut("z")
+                Button(L("Znovu")) {
+                    if let tv = NSApp.keyWindow?.firstResponder as? NSTextView { tv.undoManager?.redo() }
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+            }
+        }
 
         MenuBarExtra {
             MenuBarView()
@@ -382,7 +397,6 @@ struct TabletMain: App {
                 .environmentObject(model.reminderSettings)
                 .environmentObject(model.reminders)
                 .environmentObject(model.updater)
-                .preferredColorScheme(.dark)
         } label: {
             Image(systemName: "pencil.and.scribble")
         }
@@ -394,6 +408,7 @@ struct TabletMain: App {
 /// (the app keeps running in the background and in the menu bar).
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
+        AppearanceChoice.apply(UserDefaults.standard.string(forKey: "appearance") ?? "system")
         // tablet:// links (Shortcuts, Siri, automations) – handled here so SwiftUI does not open a window for them
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
                                                      forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))

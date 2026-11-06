@@ -45,6 +45,7 @@ final class ModeHUD {
     private func makePanel(_ size: NSSize) -> NSPanel {
         let p = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
+        p.appearance = NSAppearance(named: .darkAqua)   // on-screen overlays stay dark in light mode too
         p.isOpaque = false
         p.backgroundColor = .clear
         p.level = .statusBar

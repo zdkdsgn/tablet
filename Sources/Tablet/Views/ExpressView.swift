@@ -69,6 +69,7 @@ final class ExpressView {
     private func makePanel() -> NSPanel {
         let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 420), styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
+        p.appearance = NSAppearance(named: .darkAqua)   // on-screen overlays stay dark in light mode too
         p.isOpaque = false
         p.backgroundColor = .clear
         p.level = .statusBar

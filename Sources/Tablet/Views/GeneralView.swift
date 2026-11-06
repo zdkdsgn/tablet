@@ -7,6 +7,7 @@ struct GeneralView: View {
     @EnvironmentObject var store: OTDStore
     @EnvironmentObject var updater: Updater
     @State private var copied: String?
+    @AppStorage("appearance") private var appearance = AppearanceChoice.system.rawValue
 
     var body: some View {
         ScrollView {
@@ -50,6 +51,13 @@ struct GeneralView: View {
                     Card(title: L("Instalace přes Homebrew")) {
                         Text("Na dalším Macu stačí v Terminálu:").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                         copyRow("brew install --cask zdkdsgn/tap/tablet")
+                    }
+                    SettingRow(title: L("Vzhled"), caption: L("Světlý, tmavý, nebo podle nastavení Macu")) {
+                        Picker("", selection: $appearance) {
+                            ForEach(AppearanceChoice.allCases) { Text($0.title).tag($0.rawValue) }
+                        }
+                        .labelsHidden().pickerStyle(.segmented).fixedSize()
+                        .onChange(of: appearance) { _, v in AppearanceChoice.apply(v) }
                     }
                     SettingRow(title: L("Spouštět po přihlášení"), caption: L("Tablet i ovladač poběží hned po startu Macu")) {
                         Toggle("", isOn: Binding { model.launchAtLogin } set: { model.setLaunchAtLogin($0) })

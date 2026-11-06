@@ -138,7 +138,7 @@ struct MenuBarView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            TabletGlyph()
+            TabletGlyph().environment(\.colorScheme, .dark)
             VStack(alignment: .leading, spacing: 3) {
                 Text(store.tablet.displayName).font(.system(size: 14, weight: .semibold)).lineLimit(1)
                 HStack(spacing: 6) {

@@ -21,6 +21,7 @@ struct TouchView: View {
             HStack(alignment: .top, spacing: 20) {
                 Card(title: L("Živý náhled"), trailing: AnyView(Toggle("Dotyk zapnutý", isOn: $touch.enabled).toggleStyle(.switch))) {
                     LiveTouches(touches: device.touches)
+                        .environment(\.colorScheme, .dark)
                         .frame(maxWidth: .infinity, minHeight: 300)
                     Text(statusText).font(.system(size: 12)).foregroundStyle(Theme.secondary)
                     VStack(alignment: .leading, spacing: 8) {

@@ -41,6 +41,8 @@ final class DeviceMonitor: ObservableObject {
     var onKeyTouch: (([Bool]) -> Void)?
     /// The pen came into range: true = eraser end, false = tip (from the tool ID in the "enter" report).
     var onTool: ((Bool) -> Void)?
+    /// Pen position in mm (nil = out of range) and tip pressure 0…1.
+    var onPen: ((CGPoint?, Double) -> Void)?
     /// Called when the tablet (re)appears, e.g. to restore the ring LED.
     var onConnect: (() -> Void)?
 
@@ -164,6 +166,14 @@ final class DeviceMonitor: ObservableObject {
                 let id = (Int(bytes[2]) << 4) | (Int(bytes[3]) >> 4) | ((Int(bytes[7]) & 0x0F) << 16) | ((Int(bytes[8]) & 0xF0) << 8)
                 debug("pen enter tool 0x\(String(id, radix: 16))")
                 onTool?(id & 0x8 != 0)
+            } else if bytes.count >= 10, bytes[1] & 0xB8 == 0xA0 {
+                // general pen report (Linux wacom_intuos_general): 16-bit + 1 extra bit per axis, 200 lines per mm
+                let x = (Int(bytes[2]) << 9) | (Int(bytes[3]) << 1) | ((Int(bytes[9]) >> 1) & 1)
+                let y = (Int(bytes[4]) << 9) | (Int(bytes[5]) << 1) | (Int(bytes[9]) & 1)
+                let p = (Int(bytes[6]) << 3) | ((Int(bytes[7]) & 0xC0) >> 5) | (Int(bytes[1]) & 1)
+                onPen?(CGPoint(x: Double(x) / 200, y: Double(y) / 200), min(1, Double(p) / 2047))
+            } else if bytes[1] & 0xFE == 0x80 {
+                onPen?(nil, 0)   // left proximity
             }
             return
         }

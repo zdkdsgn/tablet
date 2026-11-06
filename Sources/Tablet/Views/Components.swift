@@ -20,9 +20,34 @@ enum Theme {
 }
 
 extension Color {
+    /// The palette is designed dark. Greys flip for the light appearance (dark backgrounds → light,
+    /// light text → dark), coloured values stay the same.
     init(hex: UInt32) {
-        self.init(.sRGB, red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
-                  blue: Double(hex & 0xFF) / 255, opacity: 1)
+        let r = Double((hex >> 16) & 0xFF) / 255, g = Double((hex >> 8) & 0xFF) / 255, b = Double(hex & 0xFF) / 255
+        guard max(r, g, b) - min(r, g, b) < 0.06 else {
+            self.init(.sRGB, red: r, green: g, blue: b, opacity: 1); return
+        }
+        self.init(nsColor: NSColor(name: nil) { ap in
+            if ap.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua { return NSColor(srgbRed: r, green: g, blue: b, alpha: 1) }
+            func flip(_ c: Double) -> Double { min(1, max(0, 1 - (c - 0.07) * 0.95)) }
+            return NSColor(srgbRed: flip(r), green: flip(g), blue: flip(b), alpha: 1)
+        })
+    }
+}
+
+/// Window appearance chosen in General (system / dark / light).
+enum AppearanceChoice: String, CaseIterable, Identifiable {
+    case system, dark, light
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .system: L("Podle systému"); case .dark: L("Tmavý"); case .light: L("Světlý") }
+    }
+    static func apply(_ raw: String) {
+        switch AppearanceChoice(rawValue: raw) ?? .system {
+        case .system: NSApp.appearance = nil
+        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        case .light: NSApp.appearance = NSAppearance(named: .aqua)
+        }
     }
 }
 
@@ -83,6 +108,61 @@ struct Banner: View {
         .padding(12)
         .background(Theme.warn.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.warn.opacity(0.4)))
+    }
+}
+
+/// Quiet info strip (not an error), e.g. "the tablet is not connected".
+struct InfoStrip: View {
+    var symbol: String
+    var text: String
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).foregroundStyle(Theme.secondary)
+            Text(text).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(Theme.well, in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// "Preset X · Undo" capsule at the bottom of the window after a bigger change; hides itself.
+struct UndoToast: View {
+    @EnvironmentObject var store: OTDStore
+    @State private var hideTask: Task<Void, Never>?
+
+    var body: some View {
+        Group {
+            if let label = store.undoToast {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok)
+                    Text(label).lineLimit(1)
+                    Button { withAnimation(.snappy) { store.undo() } } label: {
+                        Text("Vrátit zpět").fontWeight(.semibold)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Theme.accent)
+                    Text("⌘Z").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    Button { store.undoToast = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
+                        .buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                        .accessibilityLabel(L("Zavřít"))
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(Theme.control, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.border))
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .id(label)
+                .onAppear {
+                    hideTask?.cancel()
+                    hideTask = Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(6))
+                        if !Task.isCancelled { withAnimation { store.undoToast = nil } }
+                    }
+                }
+            }
+        }
+        .animation(.snappy, value: store.undoToast)
+        .padding(.bottom, 18)
     }
 }
 

@@ -39,6 +39,8 @@ final class DeviceMonitor: ObservableObject {
     var onRingButton: ((Bool) -> Void)?
     var onExpressKeys: (([Bool]) -> Void)?
     var onKeyTouch: (([Bool]) -> Void)?
+    /// The pen came into range: true = eraser end, false = tip (from the tool ID in the "enter" report).
+    var onTool: ((Bool) -> Void)?
     /// Called when the tablet (re)appears, e.g. to restore the ring LED.
     var onConnect: (() -> Void)?
 
@@ -153,6 +155,16 @@ final class DeviceMonitor: ObservableObject {
             // byte 5: ExpressKeys that are only touched (capacitive sensing, Wacom's "Express View")
             if bytes.count > 5 { onKeyTouch?((0..<8).map { bytes[5] & (1 << $0) != 0 }) }
             onRing?(bytes[2] & 0x80 != 0 ? Int(bytes[2] & 0x7F) : nil)
+            return
+        }
+        // Pen report: [1] & 0xFC == 0xC0 is "tool entered proximity" with the tool ID (Linux wacom_intuos_inout).
+        // Erasers have bit 3 of the ID set (Pro Pen 0x802 tip / 0x80A eraser).
+        if enhanced, bytes.first == 0x02, bytes.count >= 9 {
+            if bytes[1] & 0xFC == 0xC0 {
+                let id = (Int(bytes[2]) << 4) | (Int(bytes[3]) >> 4) | ((Int(bytes[7]) & 0x0F) << 16) | ((Int(bytes[8]) & 0xF0) << 8)
+                debug("pen enter tool 0x\(String(id, radix: 16))")
+                onTool?(id & 0x8 != 0)
+            }
             return
         }
         if bytes.count >= 10 && bytes.count != 10 && bytes.count != 11 { handle(bytes) }

@@ -7,6 +7,7 @@ struct TabletView: View {
     @EnvironmentObject var lights: LightSettings
     @EnvironmentObject var labels: KeyLabels
     @EnvironmentObject var slide: SliderSettings
+    @EnvironmentObject var behaviour: KeyBehaviour
     static let ring = 100
     @State private var selected = 0          // ExpressKey index, or TabletView.ring
     @State private var ringTab = 0           // 0 Režimy, 1 Nastavení, 2 Tlačítko
@@ -67,6 +68,7 @@ struct TabletView: View {
                 Text(labels.appAction(selected).caption).font(.system(size: 12)).foregroundStyle(Theme.secondary)
             }
         }
+        if labels.appAction(selected) == .tapHold { tapHoldSection }
         if labels.appAction(selected) == .radial {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Položky kruhového menu").foregroundStyle(Color(hex: 0xC7C7CC))
@@ -144,14 +146,102 @@ struct TabletView: View {
             }
             Text(zoom.buttonCycles ? L("Zaškrtnuté režimy (nejvýš 4) střídá tlačítko uprostřed kolečka. Otáčení plátna funguje ve Photoshopu.") : L("Přepínání tlačítkem je vypnuté (záložka Tlačítko)."))
                 .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            perAppModes
         } else {
             Text("Kolečko teď posílá zkratky přes OpenTabletDriver – nastavíte je v záložce Nastavení.")
                 .font(.system(size: 12)).foregroundStyle(Theme.secondary)
         }
     }
 
+    /// Tap / hold shortcuts and combinations with other keys.
+    @ViewBuilder private var tapHoldSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack { Text("Ťuknutí").frame(width: 80, alignment: .leading); CompactRecorder(keys: $behaviour.tapKeys[selected]) }
+            HStack { Text("Podržení").frame(width: 80, alignment: .leading); CompactRecorder(keys: $behaviour.holdKeys[selected]) }
+            Text("Podržení drží klávesy stisknuté, dokud tlačítko nepustíte – třeba ⌥ pro kapátko nebo mezerník pro posun plátna.")
+                .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            HStack { Text("Podržení od"); Spacer(); Text(String(format: "%.2f s", behaviour.holdDelay)).foregroundStyle(Theme.secondary) }
+            Slider(value: $behaviour.holdDelay, in: 0.15...0.8, step: 0.05)
+        }
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Kombinace s dalším tlačítkem").foregroundStyle(Color(hex: 0xC7C7CC))
+            let others = (0..<store.aux.count).filter { $0 != selected && labels.appAction($0) == .tapHold }
+            if others.isEmpty {
+                Text("Kombinace fungují mezi tlačítky s funkcí Ťuknutí / podržení. Nastavte ji i dalšímu tlačítku.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            } else {
+                ForEach(others, id: \.self) { j in
+                    HStack {
+                        Text("+ \(j + 1)").frame(width: 80, alignment: .leading)
+                        CompactRecorder(keys: Binding { behaviour.combo(selected, j) } set: { behaviour.setCombo(selected, j, $0) })
+                    }
+                }
+                Text("Stiskněte obě tlačítka zároveň. Samotná tlačítka pak nic nepošlou.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            }
+        }
+    }
+
+    /// Ring mode per app (switched automatically when the app comes to the front).
+    @ViewBuilder private var perAppModes: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Režim podle aplikace").foregroundStyle(Color(hex: 0xC7C7CC))
+            ForEach(zoom.appModes.keys.filter { $0 != "*" }.sorted(), id: \.self) { id in
+                HStack {
+                    Text(Self.appName(id)).lineLimit(1)
+                    Spacer()
+                    Picker("", selection: Binding { RingMode(rawValue: zoom.appModes[id] ?? 0) ?? .zoom } set: { zoom.appModes[id] = $0.rawValue }) {
+                        ForEach(RingMode.allCases) { Text($0.title).tag($0) }
+                    }
+                    .labelsHidden().fixedSize()
+                    Button { zoom.appModes.removeValue(forKey: id) } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                        .accessibilityLabel(L("Odebrat"))
+                }
+            }
+            HStack {
+                Text("Ostatní aplikace")
+                Spacer()
+                Picker("", selection: Binding { zoom.appModes["*"] ?? -1 } set: { v in
+                    if v < 0 { zoom.appModes.removeValue(forKey: "*") } else { zoom.appModes["*"] = v }
+                }) {
+                    Text("Neměnit").tag(-1)
+                    ForEach(RingMode.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                .labelsHidden().fixedSize()
+            }
+            Menu("Přidat aplikaci") {
+                ForEach(Self.runningApps().filter { zoom.appModes[$0.id] == nil }, id: \.id) { app in
+                    Button(app.name) { zoom.appModes[app.id] = zoom.mode.rawValue }
+                }
+            }
+            .fixedSize()
+            Text("Když aplikaci přepnete dopředu, kolečko se samo přepne do jejího režimu.")
+                .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+        }
+    }
+
+    static func runningApps() -> [(id: String, name: String)] {
+        NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != Bundle.main.bundleIdentifier }
+            .compactMap { a in a.bundleIdentifier.map { ($0, a.localizedName ?? $0) } }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    static func appName(_ id: String) -> String {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        }
+        return id
+    }
+
     @ViewBuilder private var ringSettings: some View {
         if zoom.smooth {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack { Text("Zrychlení"); Spacer(); Text(zoom.acceleration == 0 ? L("Vypnuto") : "\(Int(zoom.acceleration * 100)) %").foregroundStyle(Theme.secondary) }
+                Slider(value: $zoom.acceleration, in: 0...1, step: 0.1)
+                Text("Rychlé otočení udělá větší krok, pomalé jemný.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Klávesa pro zoom").foregroundStyle(Color(hex: 0xC7C7CC))
                 Picker("Klávesa pro zoom", selection: $zoom.modifier) {

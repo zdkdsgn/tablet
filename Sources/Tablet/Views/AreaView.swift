@@ -5,8 +5,15 @@ struct AreaView: View {
     @EnvironmentObject var store: OTDStore
     @AppStorage("area.lockAspect") private var lockAspect = true
     @State private var screens: [ScreenInfo] = ScreenInfo.all()
+    @EnvironmentObject var usage: UsageMap
+    @EnvironmentObject var model: AppModel
+    @State private var showHeat = true
 
     var body: some View {
+        ScrollView { content }
+    }
+
+    private var content: some View {
         VStack(spacing: 20) {
             HStack(alignment: .top, spacing: 20) {
                 Card(title: L("Obrazovka")) {
@@ -21,7 +28,7 @@ struct AreaView: View {
                         .font(.system(size: 12)).foregroundStyle(Theme.secondary)
                 }
                 Card(title: L("Plocha tabletu"), trailing: AnyView(Text("Táhněte obdélník").font(.system(size: 12)).foregroundStyle(Theme.secondary))) {
-                    TabletAreaEditor(area: $store.tabletArea, full: store.fullTablet)
+                    TabletAreaEditor(area: $store.tabletArea, full: store.fullTablet, heat: showHeat ? usage.cells : nil)
                         .frame(maxWidth: .infinity, minHeight: 240)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -43,6 +50,30 @@ struct AreaView: View {
                 }
                 SettingRow(title: L("Celý tablet"), caption: L("Použít největší plochu")) {
                     Button("Obnovit") { fit(scale: 1, center: true) }
+                }
+            }
+            HStack(alignment: .top, spacing: 12) {
+                SettingRow(title: L("Kde kreslíte"), caption: usage.total < 400 ? L("Aplikace si pamatuje, kam po tabletu kreslíte. Až bude dost tahů, navrhne menší a přesnější plochu.") : String(format: L("Zaznamenáno %d bodů tahů. Oranžová ukazuje, kam kreslíte nejčastěji."), usage.total)) {
+                    HStack(spacing: 8) {
+                        Toggle("Ukázat", isOn: $showHeat).toggleStyle(.checkbox)
+                        Button("Navrhnout plochu") {
+                            if let a = usage.suggestion(full: store.fullTablet, aspect: lockAspect && store.displayArea.height > 0 ? store.displayArea.width / store.displayArea.height : nil) {
+                                var n = a; n.rotation = store.tabletArea.rotation
+                                store.tabletArea = n
+                            }
+                        }
+                        .disabled(usage.total < 400)
+                        Menu {
+                            Toggle("Zaznamenávat", isOn: $usage.enabled)
+                            Button("Vymazat záznam", role: .destructive) { usage.reset() }
+                        } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).fixedSize()
+                    }
+                }
+            }
+            if model.windowMapping != nil {
+                Banner(text: L("Tablet je teď namapovaný jen na okno. Dalším stiskem tlačítka Plocha na okno se vrátí celá obrazovka."), button: L("Vrátit")) {
+                    model.toggleWindowMapping()
                 }
             }
         }
@@ -147,6 +178,8 @@ struct DisplayPreview: View {
 struct TabletAreaEditor: View {
     @Binding var area: AreaRect
     var full: (width: Double, height: Double)
+    /// Usage map cells (UsageMap.cols × rows) drawn over the tablet, nil = hidden.
+    var heat: [Int]? = nil
     @State private var dragStart: AreaRect?
 
     var body: some View {
@@ -159,6 +192,19 @@ struct TabletAreaEditor: View {
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(hex: 0x5A5A60), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                     .frame(width: full.width * k, height: full.height * k)
                     .offset(x: ox, y: oy)
+                if let heat, let peak = heat.max(), peak > 0 {
+                    Canvas { ctx, size in
+                        let cw = size.width / Double(UsageMap.cols), ch = size.height / Double(UsageMap.rows)
+                        for (i, c) in heat.enumerated() where c > 0 {
+                            let v = sqrt(Double(c) / Double(peak))
+                            let r = CGRect(x: Double(i % UsageMap.cols) * cw, y: Double(i / UsageMap.cols) * ch, width: cw + 0.5, height: ch + 0.5)
+                            ctx.fill(Path(r), with: .color(Color(hex: 0xFF9F0A).opacity(0.15 + v * 0.7)))
+                        }
+                    }
+                    .frame(width: full.width * k, height: full.height * k)
+                    .offset(x: ox, y: oy)
+                    .allowsHitTesting(false)
+                }
                 RoundedRectangle(cornerRadius: 4).fill(Theme.accent.opacity(0.2))
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.accent, lineWidth: 2))
                     .overlay(Text(String(format: "%.1f × %.1f mm", area.width, area.height)).fontWeight(.semibold))

@@ -82,7 +82,7 @@ final class KeyLabels: ObservableObject {
 
 /// ExpressKey functions implemented by this app (OpenTabletDriver's binding is set to nothing).
 enum AppKeyAction: String, CaseIterable, Identifiable {
-    case none = "", precision, display, radial
+    case none = "", tapHold, precision, display, window, radial
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -90,6 +90,8 @@ enum AppKeyAction: String, CaseIterable, Identifiable {
         case .precision: return L("Přesný režim")
         case .display: return L("Další monitor")
         case .radial: return L("Kruhové menu")
+        case .tapHold: return L("Ťuknutí / podržení")
+        case .window: return L("Plocha na okno")
         }
     }
     var caption: String {
@@ -98,6 +100,8 @@ enum AppKeyAction: String, CaseIterable, Identifiable {
         case .precision: return L("Dokud tlačítko držíte, pero se pohybuje jemněji.")
         case .display: return L("Přepne, na který monitor se tablet mapuje.")
         case .radial: return L("Podržte, perem vyberte akci a tlačítko pusťte.")
+        case .tapHold: return L("Krátký stisk pošle jednu zkratku, podržení drží jiné klávesy, dokud tlačítko nepustíte.")
+        case .window: return L("Namapuje tablet jen na okno vpředu. Dalším stiskem se vrátí celá obrazovka.")
         }
     }
     var symbol: String {
@@ -106,6 +110,8 @@ enum AppKeyAction: String, CaseIterable, Identifiable {
         case .precision: return "scope"
         case .display: return "display.2"
         case .radial: return "circle.grid.cross"
+        case .tapHold: return "hand.tap"
+        case .window: return "macwindow"
         }
     }
 }

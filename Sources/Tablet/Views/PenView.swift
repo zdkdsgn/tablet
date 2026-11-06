@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 struct PenView: View {
+    @EnvironmentObject var behaviour: KeyBehaviour
     @EnvironmentObject var store: OTDStore
     @EnvironmentObject var pen: PenFilters
     @State private var pressure: Double = 0
@@ -63,6 +64,13 @@ struct PenView: View {
                     }
                     Card(title: L("Guma")) {
                         ActionEditor(action: $store.eraser, defaultAction: .adaptive("Eraser"), defaultTitle: L("Guma"))
+                        SettingRow(title: L("Přepínat nástroj"), caption: L("Otočíte pero gumou dolů a aplikace dostane klávesu gumy, otočíte zpět a dostane klávesu štětce")) {
+                            Toggle("", isOn: $behaviour.eraserSwitch).labelsHidden().toggleStyle(.switch)
+                        }
+                        if behaviour.eraserSwitch {
+                            HStack { Text("Guma").frame(width: 70, alignment: .leading); CompactRecorder(keys: $behaviour.eraserKeys) }
+                            HStack { Text("Hrot").frame(width: 70, alignment: .leading); CompactRecorder(keys: $behaviour.penKeys) }
+                        }
                     }
                 }
             }

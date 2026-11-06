@@ -54,6 +54,21 @@ a při prvním spuštění povolte v **Nastavení systému → Soukromí a zabez
   historie, zoom, posouvání, vlastní zkratky). Světla můžou v klidu zhasnout a rozsvítit se až při dotyku.
 - **Ikona v liště:** stav připojení, režim kolečka, předvolby a rychlé přepínače.
 - **Kontrola ovladače:** jednou denně se podívá, jestli nevyšla novější verze OpenTabletDriveru.
+- **Ťuknutí / podržení a kombinace:** ExpressKey pošle při ťuknutí jednu zkratku a při podržení drží jiné klávesy
+  (⌥ pro kapátko, mezerník pro ruku). Dvě taková tlačítka stisknutá zároveň pošlou třetí zkratku.
+- **Přepínání gumy:** otočíte pero a aplikace dostane klávesu gumy, otočíte zpět a dostane klávesu štětce.
+- **Plocha na okno:** tlačítkem, v liště nebo zkratkou namapujete tablet jen na okno vpředu, znovu = celá obrazovka.
+- **Kde kreslíte:** tepelná mapa tahů na ploše tabletu a návrh menší, přesnější plochy.
+- **Kolečko podle aplikace, hlasitost, jas, zrychlení:** režim kolečka se přepíná podle aplikace vpředu, nové režimy
+  pro hlasitost a jas, rychlé otočení dělá větší kroky.
+- **Upozornění světly a přestávky:** světla bliknou při slabé baterii, po dlouhém kreslení (počítá se jen čas s perem
+  v ruce) nebo když cokoli pošle `tablet://notify?title=…`.
+- **Zkratky, Siri a Ovládací centrum:** akce aplikace (režim kolečka, přesný režim, plocha na okno, bliknutí světel)
+  jsou v aplikaci Zkratky a odkazy `tablet://` fungují odkudkoli (`open -g tablet://ring/brush`). Ovládací prvky
+  pro Ovládací centrum a lištu na macOS 26+.
+- **Záloha:** všechno nastavení a předvolby v jednom souboru `.tabletsettings`.
+- **Aktualizace:** Tablet se podívá do GitHub Releases, ověří SHA-256 DMG a sám se nahradí.
+- **Homebrew:** `brew install --cask zdkdsgn/tap/tablet` (cask v `Casks/tablet.rb`).
 - **Jazyk:** čeština a angličtina podle jazyka macOS. Překlady jsou v `Resources/en.lproj`
   a generuje je skript `Resources/translations-en.py`.
 

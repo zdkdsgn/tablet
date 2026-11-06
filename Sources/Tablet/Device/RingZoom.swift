@@ -2,7 +2,7 @@ import AppKit
 
 /// What the Touch Ring does when this app controls it.
 enum RingMode: Int, CaseIterable, Identifiable {
-    case zoom, brush, history, scroll, rotate
+    case zoom, brush, history, scroll, rotate, volume, brightness
     var id: Int { rawValue }
     var title: String {
         switch self {
@@ -11,6 +11,8 @@ enum RingMode: Int, CaseIterable, Identifiable {
         case .history: return L("Historie")
         case .scroll: return L("Posouvání")
         case .rotate: return L("Otáčení plátna")
+        case .volume: return L("Hlasitost")
+        case .brightness: return L("Jas obrazovky")
         }
     }
     var caption: String {
@@ -20,6 +22,8 @@ enum RingMode: Int, CaseIterable, Identifiable {
         case .history: return L("Zpět ⌘Z / Znovu ⇧⌘Z")
         case .scroll: return L("Plynulé posouvání obsahu")
         case .rotate: return L("Photoshop: drží R a otáčí pohledem")
+        case .volume: return L("Hlasitost Macu")
+        case .brightness: return L("Jas vestavěného displeje")
         }
     }
     var symbol: String {
@@ -29,6 +33,8 @@ enum RingMode: Int, CaseIterable, Identifiable {
         case .history: return "clock.arrow.circlepath"
         case .scroll: return "arrow.up.and.down"
         case .rotate: return "rotate.right"
+        case .volume: return "speaker.wave.2"
+        case .brightness: return "sun.max"
         }
     }
 }
@@ -49,6 +55,10 @@ final class ZoomSettings: ObservableObject {
     @Published var mode: RingMode { didSet { d.set(mode.rawValue, forKey: "ring.mode") } }
     /// Modes the centre button cycles through (max 4 – the ring has four LEDs).
     @Published var cycle: [RingMode] { didSet { d.set(cycle.map(\.rawValue), forKey: "ring.cycle") } }
+    /// Faster turning = bigger steps (0 = off … 1 = strong).
+    @Published var acceleration: Double { didSet { d.set(acceleration, forKey: "ring.accel") } }
+    /// Ring mode per app: bundle ID → mode; "*" = every other app. Switched when the app comes to the front.
+    @Published var appModes: [String: Int] { didSet { d.set(appModes, forKey: "ring.appModes") } }
 
     /// LED for the current mode: its position in the cycle.
     var ledIndex: Int { (cycle.firstIndex(of: mode) ?? 0) % 4 }
@@ -64,7 +74,9 @@ final class ZoomSettings: ObservableObject {
 
     init() {
         d.register(defaults: ["zoom.smooth": false, "zoom.modifier": "auto", "zoom.speed": 5.0,
-                              "zoom.smoothing": 5.0, "zoom.invert": false, "ring.buttonCycles": true, "ring.mode": 0])
+                              "zoom.smoothing": 5.0, "zoom.invert": false, "ring.buttonCycles": true, "ring.mode": 0, "ring.accel": 0.0])
+        acceleration = d.double(forKey: "ring.accel")
+        appModes = (d.dictionary(forKey: "ring.appModes") as? [String: Int]) ?? [:]
         smooth = d.bool(forKey: "zoom.smooth")
         modifier = d.string(forKey: "zoom.modifier") ?? "auto"
         speed = d.double(forKey: "zoom.speed")
@@ -109,7 +121,8 @@ final class RingZoom {
     var onModeChange: ((RingMode) -> Void)?
 
     private var lastPos: Int?
-    private var stepAccum = 0
+    private var stepAccum = 0.0
+    private var lastMove = Date.distantPast
     private var pending = 0.0         // pixels still to scroll
     private var fraction = 0.0
     private var lastInput = Date.distantPast
@@ -155,9 +168,18 @@ final class RingZoom {
         longPressTimer?.invalidate()
         ignoreRingUntil = Date().addingTimeInterval(0.35)
         guard !longPressFired, settings.smooth, settings.buttonCycles else { return }
+        nextMode()
+    }
+
+    /// Next mode in the button's cycle.
+    func nextMode() {
         let all = settings.cycle.isEmpty ? [RingMode.zoom] : settings.cycle
         let i = all.firstIndex(of: settings.mode) ?? -1
-        settings.mode = all[(i + 1) % all.count]
+        setMode(all[(i + 1) % all.count])
+    }
+
+    func setMode(_ m: RingMode) {
+        settings.mode = m
         finish(); endRotate()
         stepAccum = 0
         onModeChange?(settings.mode)
@@ -178,6 +200,9 @@ final class RingZoom {
         if d > steps / 2 { d -= steps }
         if d < -steps / 2 { d += steps }
         guard d != 0 else { return }
+        let now = Date()
+        let dt = max(0.004, now.timeIntervalSince(lastMove))
+        lastMove = now
         // while / right after the centre button is pressed, ring touches are the pressing finger
         if buttonDown || sessionBlocked || Date() < ignoreRingUntil { return }
         // a touch must first move clearly (≥ 3 steps ≈ 15°, after 80 ms) before it acts:
@@ -188,21 +213,29 @@ final class RingZoom {
             sessionArmed = true
         }
         if settings.invert { d = -d }   // clockwise (positive) = zoom in / bigger / redo / down
+        // acceleration: steps per second above a slow turn scale the movement up (up to 4×)
+        let velocity = Double(abs(d)) / dt
+        let accel = 1 + settings.acceleration * min(3, max(0, (velocity - 25) / 40))
+        let dd = Double(d) * accel
 
         switch settings.mode {
         case .zoom:
-            enqueue(Double(d) * (0.5 + settings.speed * 1.1))
+            enqueue(dd * (0.5 + settings.speed * 1.1))
         case .scroll:
-            enqueue(Double(-d) * (1 + settings.speed * 2))
+            enqueue(-dd * (1 + settings.speed * 2))
+        case .volume:
+            keySteps(dd, every: 3) { up in KeySender.mediaKey(up ? KeySender.soundUp : KeySender.soundDown) }
+        case .brightness:
+            keySteps(dd, every: 3) { up in KeySender.mediaKey(up ? KeySender.brightnessUp : KeySender.brightnessDown) }
         case .brush:
-            keySteps(d, every: 3) { up in
+            keySteps(dd, every: 3) { up in
                 let code = up ? (KeyNames.keyCode(typing: "]") ?? 30) : (KeyNames.keyCode(typing: "[") ?? 33)
                 self.tapKey(CGKeyCode(code), flags: [])
             }
         case .rotate:
-            rotate(by: Double(d) * 4)
+            rotate(by: dd * 4)
         case .history:
-            keySteps(d, every: 5) { up in
+            keySteps(dd, every: 5) { up in
                 self.tapKey(CGKeyCode(KeyNames.keyCode(typing: "z") ?? 6), flags: up ? [.maskCommand, .maskShift] : [.maskCommand])
             }
         }
@@ -262,7 +295,7 @@ final class RingZoom {
 
     // MARK: key-step modes
 
-    private func keySteps(_ d: Int, every n: Int, _ fire: (Bool) -> Void) {
+    private func keySteps(_ d: Double, every n: Double, _ fire: (Bool) -> Void) {
         if (stepAccum > 0) != (d > 0) && stepAccum != 0 { stepAccum = 0 }   // direction change
         stepAccum += d
         while stepAccum >= n { stepAccum -= n; fire(true) }

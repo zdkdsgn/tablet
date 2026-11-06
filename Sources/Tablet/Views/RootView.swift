@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum Section: String, CaseIterable, Identifiable {
-    case tablet, pen, touch, lights, area, presets
+    case tablet, pen, touch, lights, area, presets, general
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -11,6 +11,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .lights: return L("Světla")
         case .area: return L("Plocha a monitor")
         case .presets: return L("Předvolby aplikací")
+        case .general: return L("Obecné")
         }
     }
     var icon: String {
@@ -21,6 +22,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .lights: return "lightbulb"
         case .area: return "display"
         case .presets: return "list.bullet.rectangle"
+        case .general: return "gearshape"
         }
     }
     var subtitle: String {
@@ -31,6 +33,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .lights: return L("Světýlka kolečka a rohů plochy")
         case .area: return L("Kterou část tabletu použít a na kterou obrazovku ji mapovat")
         case .presets: return L("Různé nastavení pro různé aplikace")
+        case .general: return L("Aktualizace, záloha, Zkratky a Siri")
         }
     }
 }
@@ -67,6 +70,7 @@ struct RootView: View {
                     case .lights: LightsView()
                     case .area: AreaView()
                     case .presets: PresetsView()
+                    case .general: GeneralView()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -80,6 +84,7 @@ struct RootView: View {
 
 struct Sidebar: View {
     @Binding var section: Section
+    @EnvironmentObject var updater: Updater
     @EnvironmentObject var store: OTDStore
     @EnvironmentObject var device: DeviceMonitor
 
@@ -129,6 +134,14 @@ struct Sidebar: View {
                     }
                 } else {
                     Button("Spustit ovladač") { store.startDaemon() }.controlSize(.small)
+                }
+                if let r = updater.available {
+                    Button { section = .general } label: {
+                        Label(String(format: L("Tablet %@ je venku"), r.version), systemImage: "sparkles")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color(hex: 0x9CC3FF))
                 }
                 if let u = store.driverUpdate {
                     Button { NSWorkspace.shared.open(u.url) } label: {

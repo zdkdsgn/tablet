@@ -24,6 +24,12 @@ final class PenTap {
     private var lastRaw: CGPoint?
 
     var enabled: Bool { tap != nil }
+    /// Raw pen location (CG) of every drawing event (pressure > 0) – for the usage map.
+    var onDraw: ((CGPoint) -> Void)?
+    /// Last time the pen did anything (for the break reminder).
+    private(set) var lastActivity = Date.distantPast
+    /// Modifiers held by an ExpressKey: added to pen events so e.g. ⌥-click works with the pen.
+    var heldFlags: CGEventFlags = []
 
     init(filters: PenFilters) { self.filters = filters }
 
@@ -68,6 +74,8 @@ final class PenTap {
             return Unmanaged.passUnretained(event)
         }
 
+        if !heldFlags.isEmpty { event.flags.formUnion(heldFlags) }
+
         // 1. pressure curve
         if filters.gamma != 1 || filters.maxInput < 1 {
             let p = event.getDoubleValueField(.mouseEventPressure)
@@ -82,6 +90,8 @@ final class PenTap {
         let now = Date()
         let gap = now.timeIntervalSince(lastEventTime)
         lastEventTime = now
+        lastActivity = now
+        if type == .leftMouseDragged, let cb = onDraw { cb(event.location) }
         let raw = event.location
         var p = raw
 

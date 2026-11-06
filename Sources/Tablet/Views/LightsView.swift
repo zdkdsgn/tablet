@@ -4,8 +4,14 @@ struct LightsView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var lights: LightSettings
     @EnvironmentObject var zoom: ZoomSettings
+    @EnvironmentObject var rem: ReminderSettings
+    @EnvironmentObject var reminders: Reminders
 
     var body: some View {
+        ScrollView { content }
+    }
+
+    private var content: some View {
         HStack(alignment: .top, spacing: 20) {
             VStack(spacing: 20) {
                 Card(title: "Touch Ring") {
@@ -37,6 +43,46 @@ struct LightsView: View {
                 LightsPreview()
             }
             VStack(spacing: 20) {
+                Card(title: L("Upozornění světly")) {
+                    SettingRow(title: L("Slabá baterie"), caption: String(format: L("Bliknou světla, když baterie Macu klesne pod %d %%"), rem.batteryLevel)) {
+                        Toggle("", isOn: $rem.batteryAlert).labelsHidden().toggleStyle(.switch)
+                    }
+                    if rem.batteryAlert {
+                        Slider(value: Binding { Double(rem.batteryLevel) } set: { rem.batteryLevel = Int($0) }, in: 5...40, step: 5)
+                    }
+                    HStack {
+                        Text("Animace upozornění")
+                        Spacer()
+                        Picker("", selection: $rem.alertAnimation) {
+                            ForEach(LEDAnimation.allCases) { Text($0.title).tag($0.rawValue) }
+                        }
+                        .labelsHidden().fixedSize()
+                        Button { model.lights.play(rem.animation) } label: { Image(systemName: "play.fill") }
+                            .accessibilityLabel(L("Přehrát"))
+                    }
+                    Text("Vlastní upozornění (hotový render, zpráva…) pošlete odkazem tablet://notify?title=… ze Zkratek nebo terminálu – viz Obecné.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                }
+                Card(title: L("Přestávky")) {
+                    SettingRow(title: L("Připomínat přestávku"), caption: L("Po dlouhém kreslení bliknou světla a ukáže se oznámení")) {
+                        Toggle("", isOn: $rem.breakEnabled).labelsHidden().toggleStyle(.switch)
+                    }
+                    if rem.breakEnabled {
+                        HStack { Text("Kreslit"); Spacer(); Text(String(format: L("%d min"), Int(rem.workMinutes))).foregroundStyle(Theme.secondary) }
+                        Slider(value: $rem.workMinutes, in: 15...120, step: 5)
+                        HStack { Text("Přestávka"); Spacer(); Text(String(format: L("%d min"), Int(rem.breakMinutes))).foregroundStyle(Theme.secondary) }
+                        Slider(value: $rem.breakMinutes, in: 2...30, step: 1)
+                        Toggle("Počítat jen čas s perem v ruce", isOn: $rem.countDrawing).toggleStyle(.checkbox)
+                        HStack {
+                            ProgressView(value: reminders.progress).tint(reminders.breakDue ? Theme.warn : Theme.accent)
+                            Text(reminders.breakDue ? L("Čas na pauzu") : String(format: L("ještě %d min"), reminders.remainingMinutes))
+                                .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                            Button("Začít znovu") { reminders.resetBreak() }.controlSize(.small)
+                        }
+                        Text("Když od tabletu odejdete na dobu přestávky, odpočet začne znovu sám.")
+                            .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                    }
+                }
                 Card(title: L("Animace")) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack { Text("Rychlost animací"); Spacer(); Text(speedName).foregroundStyle(Theme.secondary) }

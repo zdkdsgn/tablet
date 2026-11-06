@@ -7,7 +7,17 @@ struct MenuBarView: View {
     @EnvironmentObject var touch: TouchSettings
     @EnvironmentObject var zoom: ZoomSettings
     @EnvironmentObject var lights: LightSettings
+    @EnvironmentObject var rem: ReminderSettings
+    @EnvironmentObject var reminders: Reminders
+    @EnvironmentObject var updater: Updater
     @Environment(\.openWindow) private var openWindow
+
+    /// The button's cycle, plus the current mode when it is outside it (set per app or by a link).
+    private var ringModes: [RingMode] {
+        var m = zoom.cycle.isEmpty ? [RingMode.zoom] : zoom.cycle
+        if !m.contains(zoom.mode) { m.append(zoom.mode) }
+        return m
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -16,7 +26,7 @@ struct MenuBarView: View {
             if zoom.smooth && store.tablet.enhanced {
                 section("Touch Ring") {
                     HStack(spacing: 6) {
-                        ForEach(RingMode.allCases) { m in
+                        ForEach(ringModes) { m in
                             Button { zoom.mode = m; model.updateRingLED() } label: {
                                 VStack(spacing: 4) {
                                     Image(systemName: m.symbol).font(.system(size: 15))
@@ -55,13 +65,40 @@ struct MenuBarView: View {
                 }
             }
 
+            if rem.breakEnabled {
+                section("Přestávka") {
+                    HStack(spacing: 10) {
+                        Image(systemName: reminders.breakDue ? "cup.and.saucer.fill" : "timer")
+                            .foregroundStyle(reminders.breakDue ? Theme.warn : Theme.secondary)
+                        ProgressView(value: reminders.progress).tint(reminders.breakDue ? Theme.warn : Theme.accent)
+                        Text(reminders.breakDue ? L("Čas na pauzu") : String(format: L("ještě %d min"), reminders.remainingMinutes))
+                            .font(.system(size: 12)).foregroundStyle(Theme.secondary).fixedSize()
+                        Button { reminders.resetBreak() } label: { Image(systemName: "arrow.counterclockwise") }
+                            .buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                            .help(L("Začít znovu")).accessibilityLabel(L("Začít znovu"))
+                    }
+                    .padding(.horizontal, 12).frame(height: 38)
+                    .background(Theme.well, in: RoundedRectangle(cornerRadius: 10))
+                }
+            }
+
+            if let r = updater.available {
+                Button { updater.install() } label: {
+                    Label(updater.busy ? (updater.state ?? L("Instaluji…")) : String(format: L("Nainstalovat Tablet %@"), r.version), systemImage: "sparkles")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered).disabled(updater.busy)
+            }
+
             section("Rychlé volby") {
                 VStack(spacing: 0) {
                     row("lightbulb", "Světla", Binding { lights.enabled || lights.cornersEnabled } set: { on in
                         lights.enabled = on; lights.cornersEnabled = on; model.updateRingLED()
                     })
                     divider
-                    row("hand.point.up.left", "Dotyk prsty", $touch.enabled)
+                    row("scope", "Přesný režim", Binding { model.penFilters.precisionActive } set: { model.penFilters.precisionActive = $0 })
+                    divider
+                    row("macwindow", "Plocha jen na okno", Binding { model.windowMapping != nil } set: { _ in model.toggleWindowMappingFromMenu() })
                     divider
                     row("arrow.triangle.2.circlepath", "Přepínat podle aplikace", $model.autoPresets)
                     divider

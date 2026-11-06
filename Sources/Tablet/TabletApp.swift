@@ -44,6 +44,17 @@ final class AppModel: ObservableObject {
     @Published var pressedKey: Int?
     private var keysDown = [Bool](repeating: false, count: 16)
     let expressView = ExpressView()
+    let keyBehaviour = KeyBehaviour()
+    private(set) lazy var keyEngine = KeyPressEngine(settings: keyBehaviour)
+    let usage = UsageMap()
+    let reminderSettings = ReminderSettings()
+    private(set) lazy var reminders = Reminders(settings: reminderSettings)
+    let updater = Updater()
+    /// The app in front before Tablet was activated (by a tablet:// link) – focus goes back to it.
+    private var lastOtherApp: NSRunningApplication?
+    /// Display + tablet area before "map to window", restored on the next press.
+    @Published private(set) var windowMapping: (display: AreaRect, tablet: AreaRect)?
+    private var penIsEraser = false
 
     /// Finger resting on ExpressKeys → overlay with every key's function (the touched one highlighted).
     let sliderSettings = SliderSettings()
@@ -66,7 +77,9 @@ final class AppModel: ObservableObject {
             let rows = (0..<store.aux.count).map { i -> ExpressViewModel.Row in
                 let app = keyLabels.appAction(i)
                 return .init(id: i, name: keyLabels.name(i, for: store.aux[i]),
-                             detail: app == .none ? store.aux[i].title : L("Funkce aplikace"), symbol: nil)
+                             detail: app == .none ? store.aux[i].title
+                                : app == .tapHold ? KeyNames.display(keyBehaviour.tapKeys[i]) + (keyBehaviour.holdKeys[i].isEmpty ? "" : " · " + L("držet") + " " + KeyNames.display(keyBehaviour.holdKeys[i]))
+                                : app.title, symbol: nil)
             }
             let half = store.tablet.hasWheel ? (rows.count + 1) / 2 : rows.count
             let ring: ExpressViewModel.Row? = store.tablet.hasWheel
@@ -102,6 +115,8 @@ final class AppModel: ObservableObject {
                 case .precision: penFilters.precisionActive = true
                 case .display: nextDisplay()
                 case .radial: radial.open()
+                case .window: toggleWindowMapping()
+                case .tapHold: keyEngine.press(i)
                 case .none:
                     if keyLabels.showOnPress && !expressView.visible {
                         let a = store.aux[i]
@@ -113,6 +128,7 @@ final class AppModel: ObservableObject {
                 switch app {
                 case .precision: penFilters.precisionActive = false
                 case .radial: radial.close(perform: true)
+                case .tapHold: keyEngine.release(i, wasDown: true)
                 default: break
                 }
             }
@@ -158,6 +174,16 @@ final class AppModel: ObservableObject {
             self?.updateRingLED()
             self?.lights.welcome()
         }
+        keyEngine.onHeldFlagsChange = { [weak self] f in self?.edgeFix.heldFlags = f }
+        keyEngine.onFire = { [weak self] i, shortcut in
+            guard let self, self.keyLabels.showOnPress, !self.expressView.visible else { return }
+            self.hud.showKey(i, name: self.keyLabels.name(i, for: self.store.aux[i]), shortcut: shortcut)
+        }
+        device.onTool = { [weak self] eraser in self?.toolChanged(eraser: eraser) }
+        edgeFix.onDraw = { [weak self] p in self?.recordDraw(p) }
+        reminders.lastActivity = { [weak self] in self?.edgeFix.lastActivity ?? .distantPast }
+        reminders.alert = { [weak self] anim, symbol, title, text in self?.alert(anim, symbol: symbol, title: title, subtitle: text) }
+        updater.checkIfDue()
         ringZoom.onModeChange = { [weak self] m in
             guard let self else { return }
             let n = max(1, self.zoom.cycle.count)
@@ -213,11 +239,96 @@ final class AppModel: ObservableObject {
     }
 
     /// Switches to the preset named like the app in front (e.g. "Photoshop"), else to "Výchozí".
+    /// Also sets the ring mode chosen for that app.
     private func appActivated(_ app: NSRunningApplication?) {
-        guard autoPresets, let name = app?.localizedName, app?.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+        guard let app, app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+        lastOtherApp = app
+        if zoom.smooth, let raw = zoom.appModes[app.bundleIdentifier ?? ""] ?? zoom.appModes["*"],
+           let m = RingMode(rawValue: raw), m != zoom.mode {
+            setRingMode(m, notify: false)
+        }
+        guard autoPresets, let name = app.localizedName else { return }
         let match = store.presets.first { name.localizedCaseInsensitiveContains($0) || $0.localizedCaseInsensitiveContains(name) }
         if let m = match { store.applyPreset(m) }
         else if store.presets.contains("Výchozí") { store.applyPreset("Výchozí") }
+    }
+
+    // MARK: - New functions (1.2)
+
+    /// Sets the ring mode (from a link or the app in front); updates LEDs, optionally shows the notice.
+    func setRingMode(_ m: RingMode, notify: Bool) {
+        if !zoom.cycle.contains(m) && notify { zoom.mode = m; updateRingLED(); hud.show(m, dots: max(1, zoom.cycle.count), active: zoom.ledIndex); return }
+        if notify { ringZoom.setMode(m) } else { zoom.mode = m; updateRingLED() }
+    }
+
+    /// Lights + on-screen notice (battery, break, links).
+    func alert(_ animation: LEDAnimation, symbol: String, title: String, subtitle: String?) {
+        lights.play(animation)
+        hud.showMessage(symbol: symbol, title: title, subtitle: subtitle)
+    }
+
+    /// Maps the tablet to the front window of the app in front; the next call restores the previous mapping.
+    func toggleWindowMapping() {
+        if let saved = windowMapping {
+            windowMapping = nil
+            store.displayArea = saved.display
+            store.tabletArea = saved.tablet
+            hud.showMessage(symbol: "display", title: L("Celá obrazovka"), subtitle: L("Tablet se mapuje sem"))
+            return
+        }
+        guard let app = NSWorkspace.shared.frontmostApplication, app.bundleIdentifier != Bundle.main.bundleIdentifier,
+              let win = ScreenSpace.frontWindow(pid: app.processIdentifier) else {
+            hud.showMessage(symbol: "macwindow", title: L("Žádné okno"), subtitle: L("Přepněte se do aplikace, ve které kreslíte"))
+            return
+        }
+        windowMapping = (store.displayArea, store.tabletArea)
+        store.displayArea = win
+        if UserDefaults.standard.object(forKey: "area.lockAspect") as? Bool ?? true { store.fitTabletArea() }
+        hud.showMessage(symbol: "macwindow", title: app.localizedName ?? L("Okno"), subtitle: L("Tablet se mapuje jen na toto okno"))
+    }
+
+    /// From the menu bar the front app is the one under the menu: use the last app the user worked in.
+    func toggleWindowMappingFromMenu() {
+        if windowMapping == nil, let app = lastOtherApp, let win = ScreenSpace.frontWindow(pid: app.processIdentifier) {
+            windowMapping = (store.displayArea, store.tabletArea)
+            store.displayArea = win
+            if UserDefaults.standard.object(forKey: "area.lockAspect") as? Bool ?? true { store.fitTabletArea() }
+            hud.showMessage(symbol: "macwindow", title: app.localizedName ?? L("Okno"), subtitle: L("Tablet se mapuje jen na toto okno"))
+        } else {
+            toggleWindowMapping()
+        }
+    }
+
+    /// Pen flipped: eraser end → eraser tool key, tip → pen tool key (only on a change).
+    private func toolChanged(eraser: Bool) {
+        defer { penIsEraser = eraser }
+        guard keyBehaviour.eraserSwitch, eraser != penIsEraser else { return }
+        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+        KeySender.tap(eraser ? keyBehaviour.eraserKeys : keyBehaviour.penKeys)
+    }
+
+    /// A drawing point (CG coordinates) → tablet millimetres → usage map.
+    private func recordDraw(_ p: CGPoint) {
+        guard usage.enabled else { return }
+        let o = ScreenSpace.otd(fromCG: p)
+        let disp = store.displayArea, tab = store.tabletArea
+        guard disp.width > 0, disp.height > 0 else { return }
+        var u = (o.x - (disp.x - disp.width / 2)) / disp.width
+        var v = (o.y - (disp.y - disp.height / 2)) / disp.height
+        guard (0...1).contains(u), (0...1).contains(v) else { return }
+        if tab.rotation == 180 { u = 1 - u; v = 1 - v }
+        usage.record(mmX: tab.x - tab.width / 2 + u * tab.width, mmY: tab.y - tab.height / 2 + v * tab.height, full: store.fullTablet)
+    }
+
+    /// A tablet:// link; focus goes back to the app that was in front unless the link opens the window.
+    func handleLink(_ url: URL) {
+        let ok = Commands.handle(url, model: self)
+        let opensWindow = (url.host ?? "").isEmpty || url.host == "open"
+        if !opensWindow, let prev = lastOtherApp, NSApp.isActive,
+           !NSApp.windows.contains(where: { $0.isVisible && $0.identifier?.rawValue == "main" }) {
+            prev.activate()
+        }
+        if !ok { hud.showMessage(symbol: "questionmark.circle", title: L("Neznámý odkaz"), subtitle: url.absoluteString) }
     }
 
     static func openPrivacy(_ pane: String) {
@@ -243,6 +354,11 @@ struct TabletMain: App {
                 .environmentObject(model.penFilters)
                 .environmentObject(model.radialSettings)
                 .environmentObject(model.sliderSettings)
+                .environmentObject(model.keyBehaviour)
+                .environmentObject(model.usage)
+                .environmentObject(model.reminderSettings)
+                .environmentObject(model.reminders)
+                .environmentObject(model.updater)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 700)
         }
@@ -261,6 +377,11 @@ struct TabletMain: App {
                 .environmentObject(model.penFilters)
                 .environmentObject(model.radialSettings)
                 .environmentObject(model.sliderSettings)
+                .environmentObject(model.keyBehaviour)
+                .environmentObject(model.usage)
+                .environmentObject(model.reminderSettings)
+                .environmentObject(model.reminders)
+                .environmentObject(model.updater)
                 .preferredColorScheme(.dark)
         } label: {
             Image(systemName: "pencil.and.scribble")
@@ -272,6 +393,29 @@ struct TabletMain: App {
 /// Clicking the Dock icon while the window is closed opens it again
 /// (the app keeps running in the background and in the menu bar).
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // tablet:// links (Shortcuts, Siri, automations) – handled here so SwiftUI does not open a window for them
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
+                                                     forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+    }
+
+    @objc func handleURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
+        guard let s = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue, let url = URL(string: s) else { return }
+        MainActor.assumeIsolated {
+            if let m = AppModel.shared { m.handleLink(url) } else { pendingLinks.append(url) }
+        }
+    }
+
+    /// Links that arrived before the model existed.
+    var pendingLinks: [URL] = []
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            for u in pendingLinks { AppModel.shared?.handleLink(u) }
+            pendingLinks = []
+        }
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { MainActor.assumeIsolated { AppModel.shared?.showMainWindow() } }
         return true

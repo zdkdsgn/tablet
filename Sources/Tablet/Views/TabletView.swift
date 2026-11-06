@@ -397,22 +397,71 @@ private struct TabletStage: View {
 
     var body: some View {
         GeometryReader { g in
-            let availW = g.size.width - labelWidth - 56
-            let w = max(300, min(availW, (g.size.height - 64) * ratio))
-            let h = w / ratio
-            let ox = (g.size.width - (w + labelWidth + 24)) / 2 + labelWidth + 24
-            let oy = (g.size.height - h) / 2
-            let geo = Geometry(w: w, h: h, ox: ox, oy: oy, keys: store.aux.count, wheel: store.tablet.hasWheel)
-
-            ZStack(alignment: .topLeading) {
-                ForEach(0..<store.aux.count, id: \.self) { i in callout(i, geo) }
-                if store.tablet.hasWheel { callout(ringAt: geo) }
-                body(geo)
-                activeArea(geo)
-                ForEach(0..<store.aux.count, id: \.self) { i in key(i, geo) }
-                if store.tablet.hasWheel { ring(geo) }
+            if g.size.width - labelWidth - 56 >= 430 && g.size.height >= 380 {
+                wide(g.size)
+            } else {
+                narrow(g.size)
             }
         }
+    }
+
+    /// Wide stage: the drawing with labels on leader lines to the left.
+    private func wide(_ size: CGSize) -> some View {
+        let availW = size.width - labelWidth - 56
+        let w = min(availW, (size.height - 64) * ratio)
+        let h = w / ratio
+        let ox = (size.width - (w + labelWidth + 24)) / 2 + labelWidth + 24
+        let oy = (size.height - h) / 2
+        let geo = Geometry(w: w, h: h, ox: ox, oy: oy, keys: store.aux.count, wheel: store.tablet.hasWheel)
+        // two-line labels need ~30 pt per key; below that only the name is shown (the key shows the shortcut)
+        let twoLines = geo.keyH + geo.gap >= 30
+        return ZStack(alignment: .topLeading) {
+            ForEach(0..<store.aux.count, id: \.self) { i in callout(i, geo, twoLines: twoLines) }
+            if store.tablet.hasWheel { callout(ringAt: geo, twoLines: twoLines) }
+            drawing(geo)
+        }
+    }
+
+    /// Narrow stage (small window): the drawing across the full width, the assignments as a list below it.
+    private func narrow(_ size: CGSize) -> some View {
+        let w = max(240, size.width - 48)
+        let h = w / ratio
+        let geo = Geometry(w: w, h: h, ox: 0, oy: 0, keys: store.aux.count, wheel: store.tablet.hasWheel)
+        let half = store.tablet.hasWheel ? (store.aux.count + 1) / 2 : store.aux.count
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                ZStack(alignment: .topLeading) { drawing(geo) }
+                    .frame(width: w, height: h, alignment: .topLeading)
+                VStack(spacing: 4) {
+                    ForEach(0..<half, id: \.self) { i in legendRow(i) }
+                    if store.tablet.hasWheel { legendRing.padding(.vertical, 4) }
+                    ForEach(half..<store.aux.count, id: \.self) { i in legendRow(i) }
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    /// The tablet itself (body, active area, keys, ring), positioned by `g`.
+    @ViewBuilder private func drawing(_ geo: Geometry) -> some View {
+        body(geo)
+        activeArea(geo)
+        ForEach(0..<store.aux.count, id: \.self) { i in key(i, geo) }
+        if store.tablet.hasWheel { ring(geo) }
+    }
+
+    private func legendRow(_ i: Int) -> some View {
+        let app = labels.appAction(i)
+        return LegendRow(badge: Text("\(i + 1)"), title: labels.name(i, for: store.aux[i]),
+                         detail: app == .none ? store.aux[i].title : app.title,
+                         selected: selected == i, pressed: model.pressedKey == i) { selected = i }
+    }
+
+    private var legendRing: some View {
+        let title = zoom.smooth ? zoom.mode.title : (store.wheelCW == .none ? "Touch Ring" : store.wheelCW.title)
+        let sub = zoom.smooth ? (zoom.buttonCycles ? L("Tlačítko přepíná režim") : zoom.mode.caption) : L("Zkratky přes OpenTabletDriver")
+        return LegendRow(badge: Image(systemName: zoom.smooth ? zoom.mode.symbol : "circle.circle"), title: title, detail: sub,
+                         selected: selected == TabletView.ring, pressed: false) { selected = TabletView.ring }
     }
 
     struct Geometry {
@@ -529,21 +578,21 @@ private struct TabletStage: View {
         .position(c)
     }
 
-    private func callout(_ i: Int, _ g: Geometry) -> some View {
+    private func callout(_ i: Int, _ g: Geometry, twoLines: Bool) -> some View {
         let c = g.keyCenter(i)
         let app = labels.appAction(i)
         return Callout(title: labels.name(i, for: store.aux[i]), subtitle: app == .none ? store.aux[i].title : L("Funkce aplikace"),
-                       selected: selected == i, pressed: model.pressedKey == i,
+                       selected: selected == i, pressed: model.pressedKey == i, twoLines: twoLines,
                        width: labelWidth, lineTo: c.x - g.keyW / 2 - (g.ox - labelWidth - 24) - labelWidth)
             .position(x: g.ox - 24 - labelWidth / 2, y: c.y)
             .onTapGesture { selected = i }
     }
 
-    private func callout(ringAt g: Geometry) -> some View {
+    private func callout(ringAt g: Geometry, twoLines: Bool) -> some View {
         let c = g.ringCenter
         let title = zoom.smooth ? zoom.mode.title : (store.wheelCW == .none ? "Touch Ring" : "Kolečko: \(store.wheelCW.title)")
         let sub = zoom.smooth ? (zoom.buttonCycles ? L("Tlačítko přepíná režim") : zoom.mode.caption) : L("Zkratky přes OpenTabletDriver")
-        return Callout(title: title, subtitle: sub, selected: selected == TabletView.ring, pressed: false,
+        return Callout(title: title, subtitle: sub, selected: selected == TabletView.ring, pressed: false, twoLines: twoLines,
                        width: labelWidth, lineTo: c.x - g.ringD / 2 - (g.ox - labelWidth - 24) - labelWidth)
             .position(x: g.ox - 24 - labelWidth / 2, y: c.y)
             .onTapGesture { selected = TabletView.ring }
@@ -565,14 +614,15 @@ private struct Callout: View {
     var subtitle: String
     var selected: Bool
     var pressed: Bool
+    var twoLines = true
     var width: Double
     var lineTo: Double     // length of the leader line beyond the label's right edge
 
     var body: some View {
         HStack(spacing: 8) {
             VStack(alignment: .trailing, spacing: 1) {
-                Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.secondary).lineLimit(1)
+                Text(title).font(.system(size: twoLines ? 12 : 11, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                if twoLines { Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.secondary).lineLimit(1) }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             Circle().fill(selected || pressed ? Theme.accent : Color(hex: 0x4A4A4F)).frame(width: 5, height: 5)
@@ -587,6 +637,36 @@ private struct Callout: View {
                 .allowsHitTesting(false)
         }
         .contentShape(Rectangle())
+        .help(subtitle)
+    }
+}
+
+/// One assignment in the list under the drawing (narrow window).
+private struct LegendRow<Badge: View>: View {
+    var badge: Badge
+    var title: String
+    var detail: String
+    var selected: Bool
+    var pressed: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                badge.font(.system(size: 11, weight: .semibold))
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(selected ? Color.white.opacity(0.25) : Theme.control))
+                Text(title).fontWeight(.medium).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(detail).font(.system(size: 12)).foregroundStyle(selected ? Color.white.opacity(0.8) : Theme.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(selected ? Theme.accent : (pressed ? Theme.accent.opacity(0.3) : Theme.well), in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(selected ? .white : Color(hex: 0xE4E4E8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

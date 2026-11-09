@@ -96,8 +96,6 @@ final class DeviceMonitor: ObservableObject {
 
     func start() {
         guard manager == nil else { return }
-        inputAccess = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
-        if !inputAccess { inputAccess = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) }
 
         let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         let match: [String: Any] = [kIOHIDVendorIDKey: vendorID, kIOHIDProductIDKey: productID]
@@ -116,9 +114,15 @@ final class DeviceMonitor: ObservableObject {
         manager = m
     }
 
-    /// Re-checks Input Monitoring (after the user granted it in System Settings).
-    func recheckAccess() {
-        let granted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+    private var askedForAccess = false
+
+    /// Input Monitoring state, checked in the background by the app (after the user granted it in System Settings
+    /// the HID manager is reopened so reports start flowing).
+    func recheckAccess(granted: Bool) {
+        if !granted && !askedForAccess {
+            askedForAccess = true
+            DispatchQueue.global(qos: .utility).async { _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) }
+        }
         if granted != inputAccess {
             inputAccess = granted
             if granted, let m = manager {   // reopen so reports start flowing

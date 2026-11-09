@@ -187,21 +187,22 @@ final class OTDStore: ObservableObject {
     // MARK: - Daemon
 
     /// Processes named OpenTabletDriver.Daemon with their executable paths.
+    /// Read straight from the kernel (no `ps` child process – that can take seconds right after login).
     nonisolated static func runningDaemons() -> [(pid: Int32, path: String)] {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/ps")
-        p.arguments = ["-axo", "pid=,comm="]
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return [] }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap { line in
-            let t = line.trimmingCharacters(in: .whitespaces)
-            guard let sp = t.firstIndex(of: " "), t.hasSuffix("OpenTabletDriver.Daemon"), let pid = Int32(t[..<sp]) else { return nil }
-            return (pid, t[sp...].trimmingCharacters(in: .whitespaces))
+        let n = proc_listallpids(nil, 0)
+        guard n > 0 else { return [] }
+        var pids = [pid_t](repeating: 0, count: Int(n) + 64)
+        let count = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
+        guard count > 0 else { return [] }
+        var buf = [CChar](repeating: 0, count: 4096)
+        var out: [(pid: Int32, path: String)] = []
+        for pid in pids.prefix(Int(count)) where pid > 0 {
+            let len = proc_pidpath(pid, &buf, UInt32(buf.count))
+            guard len > 0 else { continue }
+            let path = String(cString: buf)
+            if path.hasSuffix("/OpenTabletDriver.Daemon") { out.append((pid, path)) }
         }
+        return out
     }
 
     /// Asks the daemon which tablet is connected; on a change the matching profile is loaded.
@@ -218,13 +219,43 @@ final class OTDStore: ObservableObject {
         }
     }
 
+    private var checking = false
+    private var reachablePIDs = Set<Int32>()
+    private var lastDetect = Date.distantPast
+    /// The app started its own daemon and keeps it running (restarted if it quits).
+    private var wantDaemon = false
+    @Published private(set) var daemonStarting = false
+    private var lastStart = Date.distantPast
+
+    /// Looks for the daemon in the background (it may be slow to answer while the Mac is busy) and publishes the result.
     func checkDaemon() {
-        let daemons = Self.runningDaemons()
-        daemonRunning = !daemons.isEmpty && OTDClient.isReachable()
-        if daemonRunning { detectTablet() }
-        if daemons.isEmpty { daemonSource = "" }
-        else if daemons.contains(where: { $0.path == daemonURL.path }) { daemonSource = L("Součást aplikace") }
-        else { daemonSource = L("Samostatný OpenTabletDriver") }
+        guard !checking else { return }
+        checking = true
+        let mine = daemonURL.path
+        let known = daemonRunning ? reachablePIDs : []
+        Task.detached {
+            let daemons = Self.runningDaemons()
+            let pids = Set(daemons.map(\.pid))
+            // the same daemon that answered before only needs to be alive (no new connection every few seconds)
+            let reachable = !daemons.isEmpty && (pids == known || OTDClient.isReachable())
+            await MainActor.run {
+                self.checking = false
+                let newDaemon = reachable && pids != self.reachablePIDs
+                self.reachablePIDs = reachable ? pids : []
+                if reachable != self.daemonRunning { self.daemonRunning = reachable }
+                // which tablet: when a daemon appears, then once a minute (a different tablet plugged in)
+                if reachable && (newDaemon || Date().timeIntervalSince(self.lastDetect) > 60) {
+                    self.lastDetect = Date()
+                    self.detectTablet()
+                }
+                let source = daemons.isEmpty ? "" : daemons.contains(where: { $0.path == mine }) ? L("Součást aplikace") : L("Samostatný OpenTabletDriver")
+                if source != self.daemonSource { self.daemonSource = source }
+                // our daemon quit (crash, killed) – start it again
+                if daemons.isEmpty && self.wantDaemon && !self.daemonStarting && Date().timeIntervalSince(self.lastStart) > 10 {
+                    self.startDaemon()
+                }
+            }
+        }
     }
 
     /// Starts the bundled daemon. A daemon from a separately installed OpenTabletDriver.app is stopped
@@ -232,23 +263,52 @@ final class OTDStore: ObservableObject {
     func startDaemon() {
         let mine = daemonURL.path
         let daemons = Self.runningDaemons()
-        if daemons.contains(where: { $0.path == mine }) { checkDaemon(); return }
+        wantDaemon = true
+        if daemons.contains(where: { $0.path == mine }) { checkDaemon(); waitForDaemon(); return }
         guard FileManager.default.isExecutableFile(atPath: mine) else {
             lastError = L("V aplikaci chybí ovladač (Contents/Helpers/OpenTabletDriver.Daemon). Sestavte ji znovu skriptem make-app.sh.")
             return
         }
+        guard !daemonStarting else { return }
+        daemonStarting = true
+        lastStart = Date()
         for d in daemons { kill(d.pid, SIGTERM) }
         let delay = daemons.isEmpty ? 0 : 1.5
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             let p = Process()
             p.executableURL = self.daemonURL
-            p.standardOutput = FileHandle.nullDevice
-            p.standardError = FileHandle.nullDevice
+            // the driver's own output, for troubleshooting (~/Library/Logs/Tablet-driver.log, fresh every start)
+            let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Tablet-driver.log")
+            FileManager.default.createFile(atPath: log.path, contents: nil)
+            let h = (try? FileHandle(forWritingTo: log)) ?? FileHandle.nullDevice
+            p.standardOutput = h
+            p.standardError = h
             do {
                 try p.run()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.checkDaemon(); self.pushToDaemon() }
+                self.waitForDaemon()
             } catch {
+                self.daemonStarting = false
                 self.lastError = "Ovladač nejde spustit: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// The daemon takes a few seconds to come up (much longer right after login): wait until it answers,
+    /// then hand it the settings. Gives up after two minutes.
+    private func waitForDaemon() {
+        Task.detached {
+            let start = Date()
+            var ok = false
+            while Date().timeIntervalSince(start) < 120 {
+                if OTDClient.isReachable() { ok = true; break }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            let reached = ok
+            await MainActor.run {
+                self.daemonStarting = false
+                self.checkDaemon()
+                if reached { self.pushToDaemon() }
+                else { self.lastError = L("Ovladač se nespustil – zkuste ho spustit znovu.") }
             }
         }
     }

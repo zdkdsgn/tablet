@@ -1,8 +1,8 @@
 # Homebrew cask for Tablet. Published in the tap github.com/zdkdsgn/homebrew-tap:
 #   brew install --cask zdkdsgn/tap/tablet
 cask "tablet" do
-  version "1.3"
-  sha256 "37aa6eab4a40afb4f620d3528582d1f3dc84d74a1a00bfba2034d8d060aa602c"
+  version "1.3.1"
+  sha256 "e95dcbcbad66c9577ba26decb3119405fe4624ec6e6cc280053cdcdb4a432cde"
 
   url "https://github.com/zdkdsgn/tablet/releases/download/v#{version}/Tablet-#{version}.dmg"
   name "Tablet"

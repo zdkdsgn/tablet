@@ -8,11 +8,24 @@ enum OTDClient {
         (NSTemporaryDirectory() as NSString).appendingPathComponent("CoreFxPipe_OpenTabletDriver.Daemon")
     }
 
-    /// True when a daemon accepts connections.
+    /// True when a daemon accepts connections. Never blocks: a full listen queue (daemon busy) counts as running.
     static func isReachable() -> Bool {
-        guard let fd = connect() else { return false }
-        close(fd)
-        return true
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let path = socketPath
+        let capacity = MemoryLayout.size(ofValue: addr.sun_path)
+        guard path.utf8.count < capacity else { return false }
+        withUnsafeMutablePointer(to: &addr.sun_path) {
+            $0.withMemoryRebound(to: CChar.self, capacity: capacity) { strcpy($0, path) }
+        }
+        let r = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        return r == 0 || errno == EAGAIN || errno == EINPROGRESS
     }
 
     /// Applies a complete settings object (the content of settings.json) to the running daemon.

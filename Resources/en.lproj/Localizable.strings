@@ -277,6 +277,7 @@
 "Ovladač nastavení nepřevzal – zkuste ho spustit znovu." = "The driver did not accept the settings – try starting it again.";
 "Ovladač neběží" = "The driver is not running";
 "Ovladač neodpověděl" = "The driver did not respond";
+"Ovladač se nespustil – zkuste ho spustit znovu." = "The driver did not start – try starting it again.";
 "Ovladač se spouští…" = "Starting the driver…";
 "Ovládání prsty jako na trackpadu" = "Finger control like a trackpad";
 "Oznámení" = "Notice";
@@ -444,6 +445,7 @@
 "Sněžka (výška)" = "Sněžka mountain (height)";
 "Současné nastavení a předvolby se nahradí. Aplikace se pak sama znovu spustí." = "The current settings and presets will be replaced. The app then restarts by itself.";
 "Součást aplikace" = "Built into the app";
+"Spouští se…" = "Starting…";
 "Spouštět po přihlášení" = "Open at login";
 "Spustit" = "Start";
 "Spustit ovladač" = "Start driver";

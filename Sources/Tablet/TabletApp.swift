@@ -153,7 +153,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    @Published var accessibility = TouchEngine.accessibilityGranted
+    /// Accessibility (checked in the background right after launch – assumed granted until then, so no banner flashes).
+    @Published var accessibility = true
     /// First-run guide (also opened from Obecné).
     @Published var showOnboarding = false
     @Published var autoPresets: Bool = UserDefaults.standard.bool(forKey: "autoPresets") {
@@ -276,17 +277,11 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.set(true, forKey: "loginItemConfigured")
             setLaunchAtLogin(true)
         }
-        if !accessibility { TouchEngine.requestAccessibility() }
+        checkPermissions(askIfMissing: true)
         store.startDaemon()
         store.checkDriverUpdate()
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.accessibility = TouchEngine.accessibilityGranted
-                self.device.recheckAccess()
-                self.logStatus()
-                if self.accessibility && !self.edgeFix.enabled { self.edgeFix.start() }
-            }
+            MainActor.assumeIsolated { self?.checkPermissions() }
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
@@ -329,10 +324,31 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private var checkingPermissions = false
+
+    /// Accessibility and Input Monitoring, asked in the background: each check is a round trip to the
+    /// system's privacy service, which can take seconds while the Mac is still starting up.
+    private func checkPermissions(askIfMissing: Bool = false) {
+        guard !checkingPermissions else { return }
+        checkingPermissions = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let ax = AXIsProcessTrusted()
+            let hid = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.checkingPermissions = false
+                if self.accessibility != ax { self.accessibility = ax }
+                if askIfMissing && !ax { TouchEngine.requestAccessibility() }
+                self.device.recheckAccess(granted: hid == kIOHIDAccessTypeGranted)
+                self.logStatus(hid: hid)
+                if ax && !self.edgeFix.enabled { self.edgeFix.start() }
+            }
+        }
+    }
+
     private var lastStatus = ""
     /// Writes permission / device state changes to ~/Library/Logs/Tablet.log (for troubleshooting).
-    private func logStatus() {
-        let hid = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
+    private func logStatus(hid: IOHIDAccessType) {
         let s = "ax=\(accessibility) hidAccess=\(hid.rawValue) connected=\(device.connected) touchReports=\(device.touchReportsSeen) touches=\(device.touches.count) edgeFix=\(edgeFix.enabled) bundle=\(Bundle.main.bundlePath)"
         guard s != lastStatus else { return }
         lastStatus = s

@@ -325,6 +325,8 @@ T = {
 "Praha → Brno":"Prague → Brno",
 "dnes":"today",
 "náklon":"tilt",
+"Spouští se…":"Starting…",
+"Ovladač se nespustil – zkuste ho spustit znovu.":"The driver did not start – try starting it again.",
 "Přeskočit průvodce":"Skip the guide",
 "Začít":"Get started",
 "Další":"Next",

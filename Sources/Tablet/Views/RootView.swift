@@ -147,6 +147,11 @@ struct Sidebar: View {
                     if store.daemonSource == L("Samostatný OpenTabletDriver") {
                         Button("Použít vestavěný") { store.startDaemon() }.controlSize(.small)
                     }
+                } else if store.daemonStarting {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("Spouští se…").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    }
                 } else {
                     Button("Spustit ovladač") { store.startDaemon() }.controlSize(.small)
                 }

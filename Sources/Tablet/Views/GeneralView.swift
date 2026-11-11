@@ -49,6 +49,16 @@ struct GeneralView: View {
                             Button { Backup.importFile(store: store) } label: { Label("Obnovit ze zálohy…", systemImage: "square.and.arrow.up") }
                         }
                     }
+                    Card(title: L("Pomoc a řešení potíží")) {
+                        Text("Diagnostika sbalí logy, nastavení ovladače a stav aplikace do jednoho .zip souboru, který můžete přiložit k hlášení chyby. Nic se nikam neodesílá.")
+                            .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Button { model.showHelp = true } label: { Label("Nápověda", systemImage: "questionmark.circle") }
+                            Button { Diagnostics.save(model: model) } label: { Label("Uložit diagnostiku…", systemImage: "stethoscope") }
+                            Button { NSWorkspace.shared.open(AppLog.dir) } label: { Label("Logy", systemImage: "folder") }
+                        }
+                    }
                     Card(title: L("Instalace přes Homebrew")) {
                         Text("Na dalším Macu stačí v Terminálu:").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                         copyRow("brew install --cask zdkdsgn/tap/tablet")

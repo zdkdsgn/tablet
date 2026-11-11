@@ -104,9 +104,8 @@ final class Updater: ObservableObject {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", script]
-        let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Tablet-update.log")
-        FileManager.default.createFile(atPath: log.path, contents: nil)
-        if let h = try? FileHandle(forWritingTo: log) { p.standardOutput = h; p.standardError = h }
+        let h = AppLog.appendingHandle(.update, fresh: true)
+        p.standardOutput = h; p.standardError = h
         do {
             try p.run()
             NSApp.terminate(nil)

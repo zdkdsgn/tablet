@@ -55,6 +55,9 @@ final class PenTap {
         }
     }
 
+    /// macOS can switch an event tap off (sleep, a slow moment) – switch it back on.
+    func reenable() { engine.reenable() }
+
     private func pushConfig() {
         engine.setConfig(.init(gamma: filters.gamma, maxInput: filters.maxInput, smoothing: filters.smoothing,
                                precisionActive: filters.precisionActive, precisionScale: filters.precisionScale,
@@ -133,6 +136,11 @@ final class PenTapEngine: @unchecked Sendable {
         thread.qualityOfService = .userInteractive
         thread.start()
         return true
+    }
+
+    func reenable() {
+        guard let t = tap, !CGEvent.tapIsEnabled(tap: t) else { return }
+        CGEvent.tapEnable(tap: t, enable: true)
     }
 
     private func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {

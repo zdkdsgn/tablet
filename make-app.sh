@@ -3,6 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# English strings come from Resources/translations-en.py – regenerate so they never fall behind
+python3 Resources/make-strings.py
+
 # OpenTabletDriver daemon that ships inside the app (LGPL-3.0, https://github.com/OpenTabletDriver/OpenTabletDriver)
 OTD_VERSION=0.6.8.1
 OTD_SHA256=bbd3957ba5a8809e377cda0b746c9a0578d382970375a8ee3f51db68f7b2e328
@@ -95,8 +98,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>OTDVersion</key><string>OTD_VERSION_PLACEHOLDER</string>
-  <key>CFBundleShortVersionString</key><string>1.3.1</string>
-  <key>CFBundleVersion</key><string>5</string>
+  <key>CFBundleShortVersionString</key><string>1.3.2</string>
+  <key>CFBundleVersion</key><string>6</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>CFBundleDevelopmentRegion</key><string>cs</string>
   <key>CFBundleLocalizations</key><array><string>cs</string><string>en</string></array>
@@ -128,21 +131,47 @@ APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$AP
 APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Contents/Info.plist")
 [[ -f "$CTL/Contents/Info.plist" ]] && sed -i '' "s/APP_VERSION/$APP_VERSION/;s/APP_BUILD/$APP_BUILD/" "$CTL/Contents/Info.plist"
 
-# Ad-hoc signature with a designated requirement on the bundle id only, so macOS keeps the
-# Input Monitoring / Accessibility permissions across rebuilds (default ad-hoc pins the exact build).
 xattr -cr "$APP"   # downloaded files carry quarantine/Finder attributes that codesign rejects
-codesign --force --sign - --identifier net.opentabletdriver.daemon "$APP/Contents/Helpers/OpenTabletDriver.Daemon"
-if [[ -d "$CTL" ]]; then
-  cat > "$STAGE/controls.entitlements" <<'ENT'
+if [[ -z "${SIGN_IDENTITY:-}" ]]; then
+  # Ad-hoc signature with a designated requirement on the bundle id only, so macOS keeps the
+  # Input Monitoring / Accessibility permissions across rebuilds (default ad-hoc pins the exact build).
+  codesign --force --sign - --identifier net.opentabletdriver.daemon "$APP/Contents/Helpers/OpenTabletDriver.Daemon"
+  if [[ -d "$CTL" ]]; then
+    cat > "$STAGE/controls.entitlements" <<'ENT'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>com.apple.security.app-sandbox</key><true/></dict></plist>
 ENT
-  codesign --force --sign - --identifier local.zdeko.tablet.controls --entitlements "$STAGE/controls.entitlements" \
-    --requirements '=designated => identifier "local.zdeko.tablet.controls"' "$CTL"
+    codesign --force --sign - --identifier local.zdeko.tablet.controls --entitlements "$STAGE/controls.entitlements" \
+      --requirements '=designated => identifier "local.zdeko.tablet.controls"' "$CTL"
+  fi
+  codesign --force --sign - --identifier local.zdeko.tablet \
+    --requirements '=designated => identifier "local.zdeko.tablet"' "$APP"
+else
+  # Developer ID (SIGN_IDENTITY="Developer ID Application: Name (TEAMID)"): hardened runtime + timestamp,
+  # as notarisation requires. The .NET driver needs JIT and unsigned executable memory.
+  cat > "$STAGE/daemon.entitlements" <<'ENT'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>com.apple.security.cs.allow-jit</key><true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
+</dict></plist>
+ENT
+  SIGN=(codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY")
+  "${SIGN[@]}" --identifier net.opentabletdriver.daemon --entitlements "$STAGE/daemon.entitlements" \
+    "$APP/Contents/Helpers/OpenTabletDriver.Daemon"
+  if [[ -d "$CTL" ]]; then
+    cat > "$STAGE/controls.entitlements" <<'ENT'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>com.apple.security.app-sandbox</key><true/></dict></plist>
+ENT
+    "${SIGN[@]}" --identifier local.zdeko.tablet.controls --entitlements "$STAGE/controls.entitlements" "$CTL"
+  fi
+  "${SIGN[@]}" --identifier local.zdeko.tablet "$APP"
 fi
-codesign --force --sign - --identifier local.zdeko.tablet \
-  --requirements '=designated => identifier "local.zdeko.tablet"' "$APP"
 codesign --verify --deep --strict "$APP"
 rm -rf build/Tablet.app && mkdir -p build && ditto "$APP" build/Tablet.app
 echo "Hotovo: $PWD/build/Tablet.app"

@@ -64,6 +64,10 @@ enum Commands {
             else if arg == "tilt" { m.island.demoTilt() }
             else if let t = q("title") { m.island.message(t, subtitle: q("text")) }
             else { m.island.message(PenOdometer.milestoneText(PenOdometer.milestones.last { $0 * 1000 <= m.odometer.drawn } ?? 1), subtitle: PenOdometer.pencilUsed(m.odometer.drawn)) }
+        case "help":    // tablet://help
+            m.showMainWindow(); m.showHelp = true
+        case "wake":    // tablet://wake – what happens after the Mac wakes up (for testing)
+            m.afterWake()
         case "setup":   // tablet://setup – the first-run guide
             m.showMainWindow(); m.showOnboarding = true
         case "break":

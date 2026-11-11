@@ -240,6 +240,7 @@ final class OTDStore: ObservableObject {
             let reachable = !daemons.isEmpty && (pids == known || OTDClient.isReachable())
             await MainActor.run {
                 self.checking = false
+                AppLog.trim(.driver)
                 let newDaemon = reachable && pids != self.reachablePIDs
                 self.reachablePIDs = reachable ? pids : []
                 if reachable != self.daemonRunning { self.daemonRunning = reachable }
@@ -278,9 +279,7 @@ final class OTDStore: ObservableObject {
             let p = Process()
             p.executableURL = self.daemonURL
             // the driver's own output, for troubleshooting (~/Library/Logs/Tablet-driver.log, fresh every start)
-            let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Tablet-driver.log")
-            FileManager.default.createFile(atPath: log.path, contents: nil)
-            let h = (try? FileHandle(forWritingTo: log)) ?? FileHandle.nullDevice
+            let h = AppLog.appendingHandle(.driver, fresh: true)
             p.standardOutput = h
             p.standardError = h
             do {

@@ -34,10 +34,7 @@ final class DeviceMonitor: ObservableObject {
         enhanced = t.enhanced
         guard t.vendorID != 0, t.vendorID != vendorID || t.productID != productID else { return }
         vendorID = t.vendorID; productID = t.productID
-        if let m = manager { IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone)) }
-        manager = nil
-        devices.removeAll(); penInterface = nil; connected = false
-        start()
+        reopen()
     }
     static let touchMax = 4095.0
     static let maxPoints = 16
@@ -65,7 +62,6 @@ final class DeviceMonitor: ObservableObject {
     @Published private(set) var charging = false
     private var batteryReadings: [(Date, Int)] = []
     private var batteryFirst: Date?
-    private var lastStatus: [UInt8] = []
     private var lastPadFlags: UInt8?
     /// Called when the tablet (re)appears, e.g. to restore the ring LED.
     var onConnect: (() -> Void)?
@@ -89,35 +85,28 @@ final class DeviceMonitor: ObservableObject {
         return r == kIOReturnSuccess
     }
 
-    private var manager: IOHIDManager?
+    private let reader = HIDReader()
     private var devices = Set<IOHIDDevice>()
-    private var buffers: [IOHIDDevice: UnsafeMutablePointer<UInt8>] = [:]
     private var slots = [TouchPoint?](repeating: nil, count: 16)
+    private var started = false
 
     func start() {
-        guard manager == nil else { return }
+        started = true
+        reader.deliver = { [weak self] events in MainActor.assumeIsolated { self?.apply(events) } }
+        reader.start(vendor: vendorID, product: productID, enhanced: enhanced)
+    }
 
-        let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        let match: [String: Any] = [kIOHIDVendorIDKey: vendorID, kIOHIDProductIDKey: productID]
-        IOHIDManagerSetDeviceMatching(m, match as CFDictionary)
-        let ctx = Unmanaged.passUnretained(self).toOpaque()
-        IOHIDManagerRegisterDeviceMatchingCallback(m, { ctx, _, _, device in
-            let me = Unmanaged<DeviceMonitor>.fromOpaque(ctx!).takeUnretainedValue()
-            MainActor.assumeIsolated { me.added(device) }
-        }, ctx)
-        IOHIDManagerRegisterDeviceRemovalCallback(m, { ctx, _, _, device in
-            let me = Unmanaged<DeviceMonitor>.fromOpaque(ctx!).takeUnretainedValue()
-            MainActor.assumeIsolated { me.removed(device) }
-        }, ctx)
-        IOHIDManagerScheduleWithRunLoop(m, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
-        IOHIDManagerOpen(m, IOOptionBits(kIOHIDOptionsTypeNone))
-        manager = m
+    /// Closes and reopens the tablet (another tablet, permission granted, after sleep).
+    func reopen() {
+        guard started else { return }
+        devices.removeAll(); penInterface = nil; connected = false
+        reader.start(vendor: vendorID, product: productID, enhanced: enhanced)
     }
 
     private var askedForAccess = false
 
     /// Input Monitoring state, checked in the background by the app (after the user granted it in System Settings
-    /// the HID manager is reopened so reports start flowing).
+    /// the tablet is reopened so reports start flowing).
     func recheckAccess(granted: Bool) {
         if !granted && !askedForAccess {
             askedForAccess = true
@@ -125,164 +114,79 @@ final class DeviceMonitor: ObservableObject {
         }
         if granted != inputAccess {
             inputAccess = granted
-            if granted, let m = manager {   // reopen so reports start flowing
-                IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone))
-                manager = nil
-                devices.removeAll()
-                start()
+            if granted { reopen() }
+        }
+    }
+
+    private func debug(_ s: String) { AppLog.write(s, to: .hid) }
+
+    /// Everything the HID thread decoded since the last batch, in order.
+    private func apply(_ events: [HIDReader.Event]) {
+        for e in events {
+            switch e {
+            case .added(let device, let page, let desc, let open):
+                devices.insert(device)
+                connected = true
+                debug("device added \(desc) open=0x\(String(UInt32(bitPattern: open), radix: 16))")
+                if page == 0xFF0D && enhanced {
+                    penInterface = device
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.onConnect?() }
+                }
+            case .removed(let device):
+                devices.remove(device)
+                battery = nil; batteryReadings.removeAll(); batteryFirst = nil; touchSwitchOn = nil
+                if device == penInterface { penInterface = nil }
+                connected = !devices.isEmpty
+                if !connected { slots = .init(repeating: nil, count: Self.maxPoints); publish() }
+            case .report(let r):
+                handle(r)
             }
         }
     }
 
-    // MARK: debug log (~/Library/Logs/Tablet-hid.log), first reports per interface
-    private var debugCounts: [String: Int] = [:]
-    private func debug(_ s: String) {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Tablet-hid.log")
-        let line = "\(ISO8601DateFormatter().string(from: Date())) \(s)\n"
-        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
-        else { try? line.write(to: url, atomically: true, encoding: .utf8) }
-    }
-    private func describe(_ d: IOHIDDevice) -> String {
-        let n = { (k: String) in (IOHIDDeviceGetProperty(d, k as CFString) as? NSNumber)?.intValue ?? -1 }
-        return "page=0x\(String(n(kIOHIDPrimaryUsagePageKey), radix: 16)) usage=0x\(String(n(kIOHIDPrimaryUsageKey), radix: 16)) in=\(n(kIOHIDMaxInputReportSizeKey))"
-    }
-
-    private func added(_ device: IOHIDDevice) {
-        devices.insert(device)
-        connected = true
-        let maxLen = (IOHIDDeviceGetProperty(device, kIOHIDMaxInputReportSizeKey as CFString) as? NSNumber)?.intValue ?? 0
-        let desc = describe(device)
-        let openRes = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
-        debug("device added \(desc) open=0x\(String(UInt32(bitPattern: openRes), radix: 16))")
-        guard maxLen > 0 else { return }
-        let page = (IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsagePageKey as CFString) as? NSNumber)?.intValue ?? 0
-        if page == 0xFF0D && enhanced {
-            penInterface = device
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.onConnect?() }
-        }
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: maxLen)
-        buffers[device] = buf
-        let ctx = Unmanaged.passUnretained(self).toOpaque()
-        IOHIDDeviceRegisterInputReportCallback(device, buf, maxLen, { ctx, result, _, _, _, report, length in
-            guard result == kIOReturnSuccess else { return }
-            let me = Unmanaged<DeviceMonitor>.fromOpaque(ctx!).takeUnretainedValue()
-            let bytes = Array(UnsafeBufferPointer(start: report, count: length))
-            MainActor.assumeIsolated { me.received(bytes, maxLen: length) }
-        }, ctx)
-    }
-
-    private func received(_ bytes: [UInt8], maxLen: Int) {
-        let key = "len\(bytes.count)-id\(bytes.first ?? 0)"
-        let c = debugCounts[key, default: 0]
-        if c < 40 {
-            debugCounts[key] = c + 1
-            debug("report \(key): " + bytes.prefix(24).map { String(format: "%02x", $0) }.joined(separator: " "))
-        }
-        // Status report (0xC0): logged on every change – used to find the touch switch bit
-        if bytes.first == 0xC0 {
-            if bytes != lastStatus {
-                debug("status " + bytes.map { String(format: "%02x", $0) }.joined(separator: " "))
-                lastStatus = bytes
-                updateTouchSwitch(status: bytes)
-            }
-            return
-        }
-        // Pad report on the pen interface: [2] = Touch Ring (bit 7 = finger on it, 0…71 position)
-        if enhanced, bytes.first == 0x03, bytes.count >= 5 {
-            if bytes[1] != lastPadFlags { debug("pad flags \(String(format: "%02x", bytes[1]))"); lastPadFlags = bytes[1] }
-            onRingButton?(bytes[3] & 0x01 != 0)
-            onExpressKeys?((0..<8).map { bytes[4] & (1 << $0) != 0 })
-            // byte 5: ExpressKeys that are only touched (capacitive sensing, Wacom's "Express View")
-            if bytes.count > 5 { onKeyTouch?((0..<8).map { bytes[5] & (1 << $0) != 0 }) }
-            onRing?(bytes[2] & 0x80 != 0 ? Int(bytes[2] & 0x7F) : nil)
-            return
-        }
-        // Pen report: [1] & 0xFC == 0xC0 is "tool entered proximity" with the tool ID (Linux wacom_intuos_inout).
-        // Erasers have bit 3 of the ID set (Pro Pen 0x802 tip / 0x80A eraser).
-        if enhanced, bytes.first == 0x02, bytes.count >= 9 {
-            if bytes[1] & 0xFC == 0xC0 {
-                let id = (Int(bytes[2]) << 4) | (Int(bytes[3]) >> 4) | ((Int(bytes[7]) & 0x0F) << 16) | ((Int(bytes[8]) & 0xF0) << 8)
-                // serial number of this particular pen (Linux wacom_intuos_inout)
-                let serial = (UInt32(bytes[3] & 0x0F) << 28) | (UInt32(bytes[4]) << 20) | (UInt32(bytes[5]) << 12)
-                    | (UInt32(bytes[6]) << 4) | (UInt32(bytes[7]) >> 4)
-                debug("pen enter tool 0x\(String(id, radix: 16)) serial \(String(format: "%08X", serial))")
-                onPenIdentity?(id, serial)
-                onTool?(id & 0x8 != 0)
-            } else if bytes.count >= 10, bytes[1] & 0xB8 == 0xA0 {
-                // general pen report (Linux wacom_intuos_general): 16-bit + 1 extra bit per axis, 200 lines per mm
-                let x = (Int(bytes[2]) << 9) | (Int(bytes[3]) << 1) | ((Int(bytes[9]) >> 1) & 1)
-                let y = (Int(bytes[4]) << 9) | (Int(bytes[5]) << 1) | (Int(bytes[9]) & 1)
-                let p = (Int(bytes[6]) << 3) | ((Int(bytes[7]) & 0xC0) >> 5) | (Int(bytes[1]) & 1)
-                let tx = Double(((Int(bytes[7]) << 1) & 0x7E) | (Int(bytes[8]) >> 7)) - 64
-                let ty = Double(Int(bytes[8]) & 0x7F) - 64
-                let pressure = min(1, Double(p) / 2047)
-                onPen?(PenSample(mm: CGPoint(x: Double(x) / 200, y: Double(y) / 200), pressure: pressure,
-                                 tiltX: tx, tiltY: ty, distance: pressure > 0 ? 0 : Double(bytes[9] >> 2) / 63))
-            } else if bytes[1] & 0xFE == 0x80 {
-                onPen?(nil)   // left proximity
-            }
-            return
-        }
-        if bytes.count >= 10 && bytes.count != 10 && bytes.count != 11 { handle(bytes) }
-    }
-
-    private func removed(_ device: IOHIDDevice) {
-        devices.remove(device)
-        battery = nil; batteryReadings.removeAll(); batteryFirst = nil; touchSwitchOn = nil
-        if device == penInterface { penInterface = nil }
-        if let b = buffers.removeValue(forKey: device) { b.deallocate() }
-        connected = !devices.isEmpty
-        if !connected { slots = .init(repeating: nil, count: Self.maxPoints); publish() }
-    }
-
-    /// Wacom 64-byte touch report, same layout OpenTabletDriver's WacomTouchReport parses:
-    /// [0] report id, [1] chunk count, then 8-byte chunks: id, state, xHi, yHi, xLo|yLo nibble…
-    /// A chunk with id 0x80 carries ExpressKeys; [2] == 0x81 is a "which fingers are still down" mask.
-    private func handle(_ r: [UInt8]) {
-        guard r.count >= 10 else { return }
-        if r[2] == 0x81 {
-            let mask = Int(r[3]) | (Int(r[4]) << 8)
+    private func handle(_ r: WacomReport) {
+        switch r {
+        case .status(let st):
+            updateStatus(st)
+        case .pad(let ring, let button, let keys, let keyTouch, let flags):
+            if flags != lastPadFlags { debug("pad flags \(String(format: "%02x", flags))"); lastPadFlags = flags }
+            onRingButton?(button)
+            onExpressKeys?(keys)
+            if let keyTouch { onKeyTouch?(keyTouch) }
+            onRing?(ring)
+        case .penEnter(let tool, let serial):
+            debug("pen enter tool 0x\(String(tool, radix: 16)) serial \(String(format: "%08X", serial))")
+            onPenIdentity?(tool, serial)
+            onTool?(tool & 0x8 != 0)   // erasers have bit 3 of the ID set (Pro Pen 0x802 tip / 0x80A eraser)
+        case .pen(let sample):
+            onPen?(sample)
+        case .penExit:
+            onPen?(nil)
+        case .touch(.stillDown(let mask)):
             for i in 0..<Self.maxPoints where mask & (1 << i) == 0 { slots[i] = nil }
             publish()
-            return
-        }
-        let chunks = Int(r[1])
-        var sawTouch = false
-        for i in 0..<chunks {
-            let o = (i << 3) + 2
-            guard o + 4 < r.count else { break }
-            let rawID = Int(r[o])
-            if rawID == 0x80 { continue }      // ExpressKeys – OpenTabletDriver handles them
-            let id = rawID - 2
-            guard id >= 0, id < Self.maxPoints else { continue }
-            sawTouch = true
-            if r[o + 1] == 0x20 {
-                slots[id] = nil
-            } else {
-                let x = (Int(r[o + 2]) << 4) | (Int(r[o + 4]) >> 4)
-                let y = (Int(r[o + 3]) << 4) | (Int(r[o + 4]) & 0xF)
-                // Intuos Pro (Linux INTUOSPS…INTUOSHT2): contact width / height in bytes 5, 6
-                let w = o + 5 < r.count ? Double(r[o + 5]) : 0, h = o + 6 < r.count ? Double(r[o + 6]) : 0
-                slots[id] = TouchPoint(id: id, x: Double(x), y: Double(y), w: w, h: h)
+        case .touch(.chunks(let fingers)):
+            for f in fingers {
+                slots[f.id] = f.up ? nil : TouchPoint(id: f.id, x: f.x, y: f.y, w: f.w, h: f.h)
             }
+            touchReportsSeen += 1
+            publish()
+        case .other:
+            break
         }
-        if sawTouch { touchReportsSeen += 1; publish() }
     }
 
-    /// Status byte 8 bit 0x40 = touch switch off (Linux reports it so for Intuos HT; checked on this model via the log).
-    private func updateTouchSwitch(status b: [UInt8]) {
-        guard b.count > 9 else { return }
-        touchSwitchOn = b[8] & 0x40 == 0
-        // Linux wacom_status_irq: [9] & 0x02 = wireless module attached, [8] & 0x3F = level 0…31, [8] & 0x80 = charging
-        if b[9] & 0x02 != 0 {
+    /// Battery (smoothed: highest reading of the last minute, after 20 s) and the touch switch.
+    private func updateStatus(_ st: WacomReport.Status) {
+        touchSwitchOn = st.touchSwitchOn
+        if st.wireless {
             let now = Date()
-            batteryReadings.append((now, Int(b[8] & 0x3F) * 100 / 31))
+            batteryReadings.append((now, st.level))
             batteryReadings.removeAll { now.timeIntervalSince($0.0) > 60 }
-            // wait for readings over at least 20 s before showing anything (the first one is often low)
             batteryFirst = batteryFirst ?? now
             let level = now.timeIntervalSince(batteryFirst!) >= 20 ? batteryReadings.map(\.1).max() : nil
             if level != nil && level != battery { battery = level }
-            charging = b[8] & 0x80 != 0
+            if charging != st.charging { charging = st.charging }
         } else if battery != nil {
             battery = nil; batteryReadings.removeAll(); batteryFirst = nil
         }
@@ -292,5 +196,139 @@ final class DeviceMonitor: ObservableObject {
         let t = slots.compactMap { $0 }
         touches = t
         onTouches?(t)
+    }
+}
+
+/// Reads the tablet on its own thread: reports are decoded there and handed to the main thread in batches
+/// (about 120 a second), so a busy main thread never holds up the tablet and pen reports don't wake it 200× a second.
+final class HIDReader: @unchecked Sendable {
+    enum Event {
+        case added(IOHIDDevice, page: Int, desc: String, open: IOReturn)
+        case removed(IOHIDDevice)
+        case report(WacomReport)
+    }
+
+    /// Called on the main thread with every batch.
+    var deliver: (([Event]) -> Void)?
+
+    private let lock = NSLock()
+    private var pending: [Event] = []
+    private var flushScheduled = false
+    private var runLoop: CFRunLoop?
+    private let ready = DispatchSemaphore(value: 0)
+
+    // HID thread only
+    private var manager: IOHIDManager?
+    private var enhanced = true
+    private var buffers: [IOHIDDevice: UnsafeMutablePointer<UInt8>] = [:]
+    private var rawCounts: [String: Int] = [:]
+    private var lastStatus: [UInt8] = []
+
+    init() {
+        let t = Thread { [weak self] in
+            guard let self else { return }
+            self.runLoop = CFRunLoopGetCurrent()
+            // keep the run loop alive with no sources yet
+            let ctx = CFRunLoopSourceContext()
+            var c = ctx
+            let keepAlive = CFRunLoopSourceCreate(nil, 0, &c)
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), keepAlive, .defaultMode)
+            self.ready.signal()
+            CFRunLoopRun()
+        }
+        t.name = "Tablet HID"
+        t.qualityOfService = .userInteractive
+        t.start()
+        ready.wait()
+    }
+
+    /// (Re)opens the HID manager for this tablet on the reader thread.
+    func start(vendor: Int, product: Int, enhanced: Bool) {
+        perform { [self] in
+            if let m = manager { IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone)) }
+            for (_, b) in buffers { b.deallocate() }
+            buffers.removeAll()
+            self.enhanced = enhanced
+            let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+            IOHIDManagerSetDeviceMatching(m, [kIOHIDVendorIDKey: vendor, kIOHIDProductIDKey: product] as CFDictionary)
+            let ctx = Unmanaged.passUnretained(self).toOpaque()
+            IOHIDManagerRegisterDeviceMatchingCallback(m, { ctx, _, _, device in
+                Unmanaged<HIDReader>.fromOpaque(ctx!).takeUnretainedValue().added(device)
+            }, ctx)
+            IOHIDManagerRegisterDeviceRemovalCallback(m, { ctx, _, _, device in
+                Unmanaged<HIDReader>.fromOpaque(ctx!).takeUnretainedValue().removed(device)
+            }, ctx)
+            IOHIDManagerScheduleWithRunLoop(m, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+            IOHIDManagerOpen(m, IOOptionBits(kIOHIDOptionsTypeNone))
+            manager = m
+        }
+    }
+
+    private func perform(_ block: @escaping () -> Void) {
+        guard let rl = runLoop else { return }
+        CFRunLoopPerformBlock(rl, CFRunLoopMode.defaultMode.rawValue, block)
+        CFRunLoopWakeUp(rl)
+    }
+
+    private func added(_ device: IOHIDDevice) {
+        let n = { (k: String) in (IOHIDDeviceGetProperty(device, k as CFString) as? NSNumber)?.intValue ?? -1 }
+        let maxLen = max(0, n(kIOHIDMaxInputReportSizeKey))
+        let page = n(kIOHIDPrimaryUsagePageKey)
+        let desc = "page=0x\(String(page, radix: 16)) usage=0x\(String(n(kIOHIDPrimaryUsageKey), radix: 16)) in=\(maxLen)"
+        let open = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
+        enqueue(.added(device, page: page, desc: desc, open: open))
+        guard maxLen > 0 else { return }
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: maxLen)
+        buffers[device] = buf
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
+        IOHIDDeviceRegisterInputReportCallback(device, buf, maxLen, { ctx, result, _, _, _, report, length in
+            guard result == kIOReturnSuccess else { return }
+            Unmanaged<HIDReader>.fromOpaque(ctx!).takeUnretainedValue()
+                .received(Array(UnsafeBufferPointer(start: report, count: length)))
+        }, ctx)
+    }
+
+    private func removed(_ device: IOHIDDevice) {
+        if let b = buffers.removeValue(forKey: device) { b.deallocate() }
+        enqueue(.removed(device))
+    }
+
+    private func received(_ bytes: [UInt8]) {
+        // ~/Library/Logs/Tablet-hid.log: the first reports of each kind, and status changes (not battery flicker)
+        let key = "len\(bytes.count)-id\(bytes.first ?? 0)"
+        let c = rawCounts[key, default: 0]
+        if c < 40 {
+            rawCounts[key] = c + 1
+            AppLog.write("report \(key): " + bytes.prefix(24).map { String(format: "%02x", $0) }.joined(separator: " "), to: .hid)
+        }
+        if bytes.first == 0xC0 {
+            let sig = WacomReport.statusSignature(bytes)
+            if sig != lastStatus {
+                lastStatus = sig
+                AppLog.write("status " + bytes.map { String(format: "%02x", $0) }.joined(separator: " "), to: .hid)
+            }
+        }
+        let r = WacomReport.decode(bytes, enhanced: enhanced)
+        if r != .other { enqueue(.report(r)) }
+    }
+
+    private func enqueue(_ e: Event) {
+        let schedule: Bool = lock.withLock {
+            pending.append(e)
+            if flushScheduled { return false }
+            flushScheduled = true
+            return true
+        }
+        guard schedule else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 120) { [weak self] in
+            guard let self else { return }
+            let batch: [Event] = self.lock.withLock {
+                let b = self.pending
+                self.pending.removeAll(keepingCapacity: true)
+                self.flushScheduled = false
+                return b
+            }
+            self.deliver?(batch)
+        }
     }
 }

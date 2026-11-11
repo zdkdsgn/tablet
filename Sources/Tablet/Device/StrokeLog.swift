@@ -7,6 +7,17 @@ struct Stroke {
     var points: [SIMD3<Float>]   // x mm, y mm, pressure 0…1
 }
 
+/// A touch of the tip that did not travel (a tap or a press): how long and how hard.
+struct Tap: Identifiable, Equatable {
+    var time: Date
+    var duration: Float      // seconds the tip was down
+    var peak: Float          // highest pressure 0…1
+    var x: Float, y: Float   // tablet mm
+    var threshold: Float     // click threshold at that moment (0…1)
+    var id: Double { time.timeIntervalSince1970 }
+    var clicked: Bool { peak > threshold }
+}
+
 /// Logs every stroke of the day to ~/Library/Application Support/Tablet/Strokes/<day>.strokes,
 /// so the Strokes screen can show (and replay) what was drawn. Kept for 30 days.
 @MainActor
@@ -15,9 +26,18 @@ final class StrokeLog: ObservableObject {
     @Published var enabled: Bool { didSet { d.set(enabled, forKey: "strokes.enabled") } }
     /// Today's strokes (live).
     @Published private(set) var today: [Stroke] = []
+    /// Today's taps (live).
+    @Published private(set) var todayTaps: [Tap] = []
+    /// Tip click threshold right now (0…1), stored with each tap.
+    var tipThreshold: () -> Double = { 0.01 }
     private var todayKey: String
     private var current: [SIMD3<Float>] = []
     private var currentStart = Date()
+    private var currentPeak: Float = 0
+    private var currentReach: Float = 0     // farthest distance from the first point (mm)
+
+    /// A touch that stays within this distance (mm) is a tap, not a stroke.
+    static let tapReach: Float = 1.0
 
     static let dir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Tablet/Strokes", isDirectory: true)
@@ -29,6 +49,7 @@ final class StrokeLog: ObservableObject {
         todayKey = Self.key(Date())
         try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
         today = Self.read(Self.file(todayKey))
+        todayTaps = Self.readTaps(Self.tapFile(todayKey))
         cleanup()
     }
 
@@ -38,7 +59,9 @@ final class StrokeLog: ObservableObject {
     func add(_ s: PenSample?) {
         guard enabled, let s, s.pressure > 0.01 else { finish(); return }
         let p = SIMD3<Float>(Float(s.mm.x), Float(s.mm.y), Float(s.pressure))
-        if current.isEmpty { currentStart = Date(); current.append(p); return }
+        if current.isEmpty { currentStart = Date(); currentPeak = p.z; currentReach = 0; current.append(p); return }
+        currentPeak = max(currentPeak, p.z)
+        currentReach = max(currentReach, simd_distance(SIMD2(current[0].x, current[0].y), SIMD2(p.x, p.y)))
         // keep the file small: only points that moved ≥ 0.25 mm or changed pressure noticeably
         let l = current[current.count - 1]
         if simd_distance(SIMD2(l.x, l.y), SIMD2(p.x, p.y)) >= 0.25 || abs(l.z - p.z) > 0.06 { current.append(p) }
@@ -47,9 +70,16 @@ final class StrokeLog: ObservableObject {
     private func finish() {
         guard !current.isEmpty else { return }
         defer { current.removeAll(keepingCapacity: true) }
-        guard current.count >= 2 else { return }
         let k = Self.key(currentStart)
-        if k != todayKey { todayKey = k; today = [] }
+        if k != todayKey { todayKey = k; today = []; todayTaps = [] }
+        if currentReach < Self.tapReach {
+            let tap = Tap(time: currentStart, duration: Float(Date().timeIntervalSince(currentStart)), peak: currentPeak,
+                          x: current[0].x, y: current[0].y, threshold: Float(tipThreshold()))
+            todayTaps.append(tap)
+            Self.append(tap, to: Self.tapFile(k))
+            return
+        }
+        guard current.count >= 2 else { return }
         let st = Stroke(time: currentStart, points: current)
         today.append(st)
         Self.append(st, to: Self.file(k))
@@ -61,7 +91,11 @@ final class StrokeLog: ObservableObject {
     func days() -> [Date] {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
         let names = (try? FileManager.default.contentsOfDirectory(atPath: Self.dir.path)) ?? []
-        var out = names.compactMap { $0.hasSuffix(".strokes") ? f.date(from: String($0.dropLast(8))) : nil }
+        var out = Array(Set(names.compactMap { n -> Date? in
+            if n.hasSuffix(".strokes") { return f.date(from: String(n.dropLast(8))) }
+            if n.hasSuffix(".taps") { return f.date(from: String(n.dropLast(5))) }
+            return nil
+        }))
         if !out.contains(where: { Calendar.current.isDateInToday($0) }) { out.append(Calendar.current.startOfDay(for: Date())) }
         return out.sorted(by: >)
     }
@@ -70,15 +104,23 @@ final class StrokeLog: ObservableObject {
         Calendar.current.isDateInToday(day) ? today : Self.read(Self.file(Self.key(day)))
     }
 
+    func taps(on day: Date) -> [Tap] {
+        Calendar.current.isDateInToday(day) ? todayTaps : Self.readTaps(Self.tapFile(Self.key(day)))
+    }
+
     func delete(day: Date) {
         try? FileManager.default.removeItem(at: Self.file(Self.key(day)))
-        if Calendar.current.isDateInToday(day) { today = [] }
+        try? FileManager.default.removeItem(at: Self.tapFile(Self.key(day)))
+        if Calendar.current.isDateInToday(day) { today = []; todayTaps = [] }
         objectWillChange.send()
     }
 
     private func cleanup() {
         let cutoff = Calendar.current.date(byAdding: .day, value: -Self.keepDays, to: Date()) ?? .distantPast
-        for day in days() where day < cutoff { try? FileManager.default.removeItem(at: Self.file(Self.key(day))) }
+        for day in days() where day < cutoff {
+            try? FileManager.default.removeItem(at: Self.file(Self.key(day)))
+            try? FileManager.default.removeItem(at: Self.tapFile(Self.key(day)))
+        }
     }
 
     // MARK: file format: per stroke Float64 time, UInt32 count, count × 3 Float32
@@ -88,8 +130,38 @@ final class StrokeLog: ObservableObject {
         return f.string(from: date)
     }
     static func file(_ key: String) -> URL { dir.appendingPathComponent(key + ".strokes") }
+    static func tapFile(_ key: String) -> URL { dir.appendingPathComponent(key + ".taps") }
 
-    private static func append(_ s: Stroke, to url: URL) {
+    // taps: per tap Float64 time + 5 × Float32 (duration, peak, x, y, threshold)
+    static func append(_ t: Tap, to url: URL) {
+        var data = Data()
+        var time = t.time.timeIntervalSince1970
+        var v = (t.duration, t.peak, t.x, t.y, t.threshold)
+        withUnsafeBytes(of: &time) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: &v) { data.append(contentsOf: $0.prefix(20)) }
+        if let h = try? FileHandle(forWritingTo: url) {
+            h.seekToEndOfFile(); h.write(data); try? h.close()
+        } else {
+            try? data.write(to: url)
+        }
+    }
+
+    static func readTaps(_ url: URL) -> [Tap] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        var out: [Tap] = []
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            var o = 0
+            while o + 28 <= raw.count {
+                func f(_ i: Int) -> Float { raw.loadUnaligned(fromByteOffset: o + 8 + i * 4, as: Float.self) }
+                out.append(Tap(time: Date(timeIntervalSince1970: raw.loadUnaligned(fromByteOffset: o, as: Double.self)),
+                               duration: f(0), peak: f(1), x: f(2), y: f(3), threshold: f(4)))
+                o += 28
+            }
+        }
+        return out
+    }
+
+    static func append(_ s: Stroke, to url: URL) {
         var data = Data()
         var t = s.time.timeIntervalSince1970
         var n = UInt32(s.points.count)
@@ -103,7 +175,7 @@ final class StrokeLog: ObservableObject {
         }
     }
 
-    private static func read(_ url: URL) -> [Stroke] {
+    static func read(_ url: URL) -> [Stroke] {
         guard let data = try? Data(contentsOf: url) else { return [] }
         var out: [Stroke] = []
         var o = 0

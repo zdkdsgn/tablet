@@ -83,6 +83,8 @@ a při prvním spuštění povolte v **Nastavení systému → Soukromí a zabez
 - **Vzhled:** světlý, tmavý, nebo podle macOS.
 - **Průvodce nastavením:** oprávnění, monitor a citlivost pera krok za krokem při prvním spuštění (Obecné →
   Průvodce nastavením, nebo `tablet://setup`).
+- **Nápověda a diagnostika:** nápověda v aplikaci (⌘?) s tipy, zkratkami a odkazy `tablet://`; „Uložit diagnostiku…“
+  sbalí logy, nastavení ovladače a stav aplikace do jednoho .zip pro hlášení chyby (nic se neodesílá).
 - **Homebrew:** `brew install --cask zdkdsgn/tap/tablet` (cask v `Casks/tablet.rb`).
 - **Jazyk:** čeština a angličtina podle jazyka macOS. Překlady jsou v `Resources/en.lproj`
   a generuje je skript `Resources/translations-en.py`.
@@ -108,6 +110,22 @@ Potřebujete macOS 14 nebo novější a Xcode (nebo Command Line Tools se Swifte
 
 Aplikace je podepsaná ad hoc, s požadavkem na podpis vázaným jen na identifikátor balíčku. Díky tomu si macOS
 pamatuje udělená oprávnění i po novém sestavení. Identifikátor si můžete změnit v `make-app.sh`.
+
+`swift test` spustí testy (dekódování zpráv z tabletu na skutečných datech, soubory tahů a ťuků, porovnání verzí,
+křivka tlaku a kontrola, že každý český text má anglický překlad). `make-dmg.sh` sestaví vydání, jen když projdou.
+Anglické texty se při každém sestavení generují z `Resources/translations-en.py`.
+
+### Podpis a notarizace (volitelné)
+
+S účtem Apple Developer jde aplikaci podepsat Developer ID a notarizovat, takže se otevře bez „Přesto otevřít“:
+
+```bash
+xcrun notarytool store-credentials tablet-notary --apple-id vy@example.com --team-id TEAMID   # jednou
+SIGN_IDENTITY="Developer ID Application: Jméno (TEAMID)" NOTARY_PROFILE=tablet-notary ./make-dmg.sh
+```
+
+Ovladač se podepíše s hardened runtime a oprávněními pro JIT, která .NET potřebuje. Bez `SIGN_IDENTITY` zůstává
+sestavení ad hoc jako dosud.
 
 ### Oprávnění (Nastavení systému → Soukromí a zabezpečení)
 

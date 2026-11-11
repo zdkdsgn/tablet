@@ -157,6 +157,8 @@ final class AppModel: ObservableObject {
     @Published var accessibility = true
     /// First-run guide (also opened from Obecné).
     @Published var showOnboarding = false
+    /// Help sheet (Help menu, ⌘?, Obecné, tablet://help).
+    @Published var showHelp = false
     @Published var autoPresets: Bool = UserDefaults.standard.bool(forKey: "autoPresets") {
         didSet { UserDefaults.standard.set(autoPresets, forKey: "autoPresets") }
     }
@@ -203,6 +205,7 @@ final class AppModel: ObservableObject {
             if s != nil { self.lights.penActivity() }
             self.strokeLog.add(s)
         }
+        strokeLog.tipThreshold = { [weak self] in (self?.store.tipThreshold ?? 1) / 100 }
         achievements.precisionActive = { [weak self] in self?.penFilters.precisionActive ?? false }
         achievements.onUnlock = { [weak self] a in
             guard let self else { return }
@@ -283,6 +286,9 @@ final class AppModel: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkPermissions() }
         }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.afterWake() }
+        }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated { self?.appActivated(app) }
@@ -326,6 +332,20 @@ final class AppModel: ObservableObject {
 
     private var checkingPermissions = false
 
+    /// After the Mac wakes up: make sure the driver runs and has the settings, the pen filter is on,
+    /// the tablet is open and the lights show the right thing (USB and the wireless kit come back late).
+    func afterWake() {
+        AppLog.write("wake", to: .app)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self else { return }
+            self.store.startDaemon()          // running → waits for an answer and hands it the settings
+            self.edgeFix.reenable()
+            if !self.device.connected { self.device.reopen() }
+            self.updateRingLED()
+            self.checkPermissions()
+        }
+    }
+
     /// Accessibility and Input Monitoring, asked in the background: each check is a round trip to the
     /// system's privacy service, which can take seconds while the Mac is still starting up.
     private func checkPermissions(askIfMissing: Bool = false) {
@@ -341,7 +361,7 @@ final class AppModel: ObservableObject {
                 if askIfMissing && !ax { TouchEngine.requestAccessibility() }
                 self.device.recheckAccess(granted: hid == kIOHIDAccessTypeGranted)
                 self.logStatus(hid: hid)
-                if ax && !self.edgeFix.enabled { self.edgeFix.start() }
+                if ax { self.edgeFix.enabled ? self.edgeFix.reenable() : self.edgeFix.start() }
             }
         }
     }
@@ -352,10 +372,7 @@ final class AppModel: ObservableObject {
         let s = "ax=\(accessibility) hidAccess=\(hid.rawValue) connected=\(device.connected) touchReports=\(device.touchReportsSeen) touches=\(device.touches.count) edgeFix=\(edgeFix.enabled) bundle=\(Bundle.main.bundlePath)"
         guard s != lastStatus else { return }
         lastStatus = s
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Tablet.log")
-        let line = "\(ISO8601DateFormatter().string(from: Date())) \(s)\n"
-        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
-        else { try? line.write(to: url, atomically: true, encoding: .utf8) }
+        AppLog.write(s, to: .app)
     }
 
     /// Switches to the preset named like the app in front (e.g. "Photoshop"), else to "Výchozí".
@@ -496,6 +513,11 @@ struct TabletMain: App {
                     if let tv = NSApp.keyWindow?.firstResponder as? NSTextView { tv.undoManager?.redo() }
                 }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
+            }
+            CommandGroup(replacing: .help) {
+                Button(L("Nápověda Tablet")) { model.showMainWindow(); model.showHelp = true }
+                    .keyboardShortcut("?", modifiers: .command)
+                Button(L("Uložit diagnostiku…")) { Diagnostics.save(model: model) }
             }
         }
 

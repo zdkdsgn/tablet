@@ -51,6 +51,15 @@ struct PenView: View {
                             Slider(value: Binding { 1 - pen.precisionScale } set: { pen.precisionScale = 1 - $0 }, in: 0.4...0.85)
                             Text("Zapnete ho podržením ExpressKey s funkcí Přesný režim (obrazovka Tablet).").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                         }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Stabilizace kurzoru")
+                            Picker("", selection: $pen.stabilize) {
+                                Text("Vypnuto").tag(0); Text("Slabě").tag(1); Text("Středně").tag(2); Text("Silně").tag(3)
+                            }
+                            .pickerStyle(.segmented).labelsHidden()
+                            Text("Tlumí chvění senzoru, když pero držíte v klidu nebo jím jemně posouváte – třeba při tažení bodu. Čím výš pero nad tabletem visí, tím tlumí víc. Při rychlém tahu se skoro vypne, takže čára nezaostává.")
+                                .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                        }
                         TipThresholdSetting(threshold: $store.tipThreshold, hover: model.penHover)
                         VStack(alignment: .leading, spacing: 6) {
                             HStack { Text("Klidné klepnutí"); Spacer() }

@@ -55,6 +55,14 @@ final class PenTap {
         }
     }
 
+    /// Writes every pen event (what OpenTabletDriver sent and what this filter made of it) to
+    /// ~/Library/Logs/Tablet-pen.log for the next `seconds` – for chasing cursor problems.
+    func trace(seconds: Double) { engine.trace(until: Date().addingTimeInterval(seconds)) }
+
+    /// How high the pen hovers right now (0 = touching … 1 = edge of range; nil = out of range), from the tablet.
+    /// The higher it is, the weaker the signal and the noisier the position – the stabiliser works harder.
+    func setHover(_ distance: Double?) { engine.setHover(distance ?? 0) }
+
     /// macOS can switch an event tap off (sleep, a slow moment) – switch it back on.
     func reenable() { engine.reenable() }
 
@@ -62,6 +70,8 @@ final class PenTap {
         engine.setConfig(.init(gamma: filters.gamma, maxInput: filters.maxInput, smoothing: filters.smoothing,
                                precisionActive: filters.precisionActive, precisionScale: filters.precisionScale,
                                calmTap: filters.calmTap, calmRadius: filters.calmRadius, calmTime: filters.calmTime,
+                               stabilize: filters.stabilize, stabilizeCutoff: filters.stabilizeParams.minCutoff,
+                               stabilizeBeta: filters.stabilizeParams.beta,
                                heldFlags: heldFlags))
     }
 
@@ -82,6 +92,7 @@ final class PenTapEngine: @unchecked Sendable {
         var gamma = 1.0, maxInput = 1.0, smoothing = 0.0
         var precisionActive = false, precisionScale = 0.3
         var calmTap = 0, calmRadius = 0.0, calmTime = 0.0
+        var stabilize = 0, stabilizeCutoff = 0.0, stabilizeBeta = 0.0
         var heldFlags: CGEventFlags = []
     }
 
@@ -98,9 +109,17 @@ final class PenTapEngine: @unchecked Sendable {
     private var _onDraw: ((CGPoint) -> Void)?
 
     var running: Bool { lock.withLock { _running } }
+    private var traceUntil = Date.distantPast
+    private var traceStart = Date()
+    func trace(until: Date) {
+        lock.withLock { traceUntil = until; traceStart = Date() }
+        AppLog.write("trace start", to: .pen)
+    }
     var lastActivity: Date { lock.withLock { _lastActivity } }
 
     func setConfig(_ c: Config) { lock.withLock { config = c } }
+    private var hover = 0.0
+    func setHover(_ d: Double) { lock.withLock { hover = d } }
     func setEnvironment(daemonPIDs: Set<Int64>, screens: [CGRect]) {
         lock.withLock { self.daemonPIDs = daemonPIDs; self.screens = screens }
     }
@@ -112,6 +131,8 @@ final class PenTapEngine: @unchecked Sendable {
     private var precisionAnchor: (raw: CGPoint, out: CGPoint)?
     private var lastRaw: CGPoint?
     private var calm: (p: CGPoint, t: Date)?
+    private var stabilizer = OneEuro2D()
+    private var lastOut: CGPoint?
 
     /// Creates the tap and starts its thread. False when macOS refuses the tap (no Accessibility yet).
     func start() -> Bool {
@@ -148,12 +169,34 @@ final class PenTapEngine: @unchecked Sendable {
             if let t = tap { CGEvent.tapEnable(tap: t, enable: true) }
             return Unmanaged.passUnretained(event)
         }
-        let (cfg, pids, screens, draw) = lock.withLock { (config, daemonPIDs, self.screens, _onDraw) }
-        guard pids.contains(event.getIntegerValueField(.eventSourceUnixProcessID)), !screens.isEmpty else {
+        let (cfg, pids, screens, draw, height) = lock.withLock { (config, daemonPIDs, self.screens, _onDraw, hover) }
+        let pid = event.getIntegerValueField(.eventSourceUnixProcessID)
+        guard pids.contains(pid), !screens.isEmpty else {
+            // while tracing, also note pointer events from anything else (e.g. the tablet's own mouse interface)
+            let (until, t0) = lock.withLock { (traceUntil, traceStart) }
+            if Date() < until {
+                AppLog.write(String(format: "%6d t%-2d OTHER pid%lld at %.2f,%.2f d%.2f,%.2f",
+                                    Int(Date().timeIntervalSince(t0) * 1000), Int(type.rawValue), pid,
+                                    event.location.x, event.location.y,
+                                    event.getDoubleValueField(.mouseEventDeltaX), event.getDoubleValueField(.mouseEventDeltaY)), to: .pen)
+            }
             return Unmanaged.passUnretained(event)
         }
 
         if !cfg.heldFlags.isEmpty { event.flags.formUnion(cfg.heldFlags) }
+        let (until, t0) = lock.withLock { (traceUntil, traceStart) }
+        let tracing = Date() < until
+        let inLoc = event.location
+        let inDX = event.getDoubleValueField(.mouseEventDeltaX), inDY = event.getDoubleValueField(.mouseEventDeltaY)
+        func trace(_ out: CGPoint, _ dx: Double, _ dy: Double) {
+            guard tracing else { return }
+            let ms = Int(Date().timeIntervalSince(t0) * 1000)
+            let sub = event.getIntegerValueField(.mouseEventSubtype)
+            let tx = event.getIntegerValueField(.tabletEventPointX), ty = event.getIntegerValueField(.tabletEventPointY)
+            AppLog.write(String(format: "%6d t%-2d sub%lld in %.2f,%.2f d%.2f,%.2f → out %.2f,%.2f d%.2f,%.2f  tab %lld,%lld p%.3f",
+                                ms, Int(type.rawValue), sub, inLoc.x, inLoc.y, inDX, inDY, out.x, out.y, dx, dy, tx, ty,
+                                event.getDoubleValueField(.mouseEventPressure)), to: .pen)
+        }
 
         // 1. pressure curve
         if cfg.gamma != 1 || cfg.maxInput < 1 {
@@ -164,7 +207,7 @@ final class PenTapEngine: @unchecked Sendable {
                 event.setDoubleValueField(.tabletEventPointPressure, value: out)
             }
         }
-        if type == .tabletPointer { return Unmanaged.passUnretained(event) }
+        if type == .tabletPointer { trace(inLoc, inDX, inDY); return Unmanaged.passUnretained(event) }
 
         let now = Date()
         let gap = now.timeIntervalSince(lastEventTime)
@@ -184,6 +227,17 @@ final class PenTapEngine: @unchecked Sendable {
             precisionAnchor = nil
         }
 
+        // 2b. stabiliser: the sensor's jitter (±0.25 pt at 200 Hz) is removed while the pen is still or slow
+        if cfg.stabilize > 0 {
+            if gap > 0.12 { stabilizer.reset() }
+            // hovering high above the tablet: much heavier smoothing (the signal is weak up there)
+            let h = type == .mouseMoved ? min(max(height, 0), 1) : 0
+            p = stabilizer.filter(p, dt: min(max(gap, 0.001), 0.05),
+                                  minCutoff: cfg.stabilizeCutoff / (1 + 3 * h), beta: cfg.stabilizeBeta / (1 + 6 * h))
+        } else {
+            stabilizer.reset()
+        }
+
         // 3. smoothing (reset after a pause, e.g. pen lifted out of range)
         if cfg.smoothing > 0 {
             let alpha = max(0.08, 1 - cfg.smoothing * 0.09)
@@ -201,7 +255,9 @@ final class PenTapEngine: @unchecked Sendable {
         let maxX = r.maxX - 1, maxY = r.maxY - 1
         var dx = event.getDoubleValueField(.mouseEventDeltaX)
         var dy = event.getDoubleValueField(.mouseEventDeltaY)
-        if let l = lastRaw, cfg.precisionActive || cfg.smoothing > 0 {
+        if cfg.stabilize > 0, let o = lastOut, gap < 0.12 {
+            dx = p.x - o.x; dy = p.y - o.y      // movement of the filtered cursor, not the jittery raw one
+        } else if let l = lastRaw, cfg.precisionActive || cfg.smoothing > 0 {
             dx = (raw.x - l.x) * (cfg.precisionActive ? cfg.precisionScale : 1)
             dy = (raw.y - l.y) * (cfg.precisionActive ? cfg.precisionScale : 1)
         }
@@ -235,9 +291,11 @@ final class PenTapEngine: @unchecked Sendable {
             calm = nil
         }
 
+        lastOut = p
         event.location = p
         event.setDoubleValueField(.mouseEventDeltaX, value: dx)
         event.setDoubleValueField(.mouseEventDeltaY, value: dy)
+        trace(p, dx, dy)
         return Unmanaged.passUnretained(event)
     }
 
@@ -251,5 +309,26 @@ final class PenTapEngine: @unchecked Sendable {
 
     private func dist(_ r: CGRect, _ p: CGPoint) -> Double {
         hypot(max(r.minX - p.x, 0, p.x - r.maxX), max(r.minY - p.y, 0, p.y - r.maxY))
+    }
+}
+
+/// One Euro filter (Casiez et al. 2012) for a 2D point: a low-pass whose cutoff rises with speed –
+/// a still pen gets heavy smoothing (no jitter), a fast stroke almost none (no lag).
+struct OneEuro2D {
+    private var x: CGPoint?
+    private var speed: CGPoint = .zero
+    private var last: CGPoint?
+
+    mutating func reset() { x = nil; last = nil; speed = .zero }
+
+    mutating func filter(_ p: CGPoint, dt: Double, minCutoff: Double, beta: Double, dCutoff: Double = 1) -> CGPoint {
+        func alpha(_ fc: Double) -> Double { let tau = 1 / (2 * .pi * fc); return 1 / (1 + tau / dt) }
+        guard let prev = x, let l = last else { x = p; last = p; return p }
+        let ad = alpha(dCutoff)
+        speed = CGPoint(x: speed.x + ad * ((p.x - l.x) / dt - speed.x), y: speed.y + ad * ((p.y - l.y) / dt - speed.y))
+        let a = alpha(minCutoff + beta * hypot(speed.x, speed.y))
+        let out = CGPoint(x: prev.x + a * (p.x - prev.x), y: prev.y + a * (p.y - prev.y))
+        x = out; last = p
+        return out
     }
 }

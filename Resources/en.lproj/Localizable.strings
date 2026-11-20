@@ -6,6 +6,7 @@
 "%d kliknutí · %d pod prahem" = "%d clicks · %d below threshold";
 "%d kroky na tlačítko" = "%d steps per key";
 "%d min" = "%d min";
+"%d s – chyťte bod a držte" = "%d s – grab a point and hold";
 "%d × %d bodů" = "%d × %d points";
 "%lld %% přítlaku" = "%lld %% of pressure";
 "%lld × %lld bodů" = "%lld × %lld points";
@@ -477,6 +478,7 @@
 "Spustit" = "Start";
 "Spustit ovladač" = "Start driver";
 "Spustit průvodce" = "Run the guide";
+"Stabilizace kurzoru" = "Cursor stabiliser";
 "Stahuji…" = "Downloading…";
 "Statistiky ve výřezu" = "Stats in the notch";
 "Stav se tu obnoví sám, jakmile oprávnění zapnete." = "The status here updates by itself once you turn the permission on.";
@@ -534,6 +536,7 @@
 "Tlačítko nic nedělá." = "The button does nothing.";
 "Tlačítko přepíná režim" = "The button cycles modes";
 "Tlumí chvění ruky. Vyšší hodnota = klidnější, ale lehce opožděná čára." = "Damps hand jitter. Higher = steadier but slightly delayed line.";
+"Tlumí chvění senzoru, když pero držíte v klidu nebo jím jemně posouváte – třeba při tažení bodu. Čím výš pero nad tabletem visí, tím tlumí víc. Při rychlém tahu se skoro vypne, takže čára nezaostává." = "Removes the sensor's jitter while the pen is held still or moved gently – when dragging a point, for example. The higher the pen hovers, the more it smooths. On fast strokes it almost switches off, so lines don't lag.";
 "Tmavý" = "Dark";
 "To je jako %@." = "That's like %@.";
 "Tohle není záloha aplikace Tablet." = "This is not a Tablet backup.";
@@ -664,6 +667,7 @@
 "Zvědavec" = "Curious one";
 "Záloha nastavení" = "Settings backup";
 "Zálohu se nepodařilo uložit." = "The backup could not be saved.";
+"Záznam pera" = "Pen recording";
 "autobus" = "a bus";
 "běží." = "is running.";
 "celkem" = "total";

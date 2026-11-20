@@ -203,6 +203,7 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.penHover.update(s); self.odometer.add(s); self.achievements.sample(s, odo: self.odometer)
             if s != nil { self.lights.penActivity() }
+            self.edgeFix.setHover(s.map { $0.pressure > 0 ? 0 : $0.distance })
             self.strokeLog.add(s)
         }
         strokeLog.tipThreshold = { [weak self] in (self?.store.tipThreshold ?? 1) / 100 }

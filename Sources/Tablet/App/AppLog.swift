@@ -12,6 +12,7 @@ enum AppLog {
         case hid = "Tablet-hid"
         case driver = "Tablet-driver"
         case update = "Tablet-update"
+        case pen = "Tablet-pen"
         var url: URL { AppLog.dir.appendingPathComponent(rawValue + ".log") }
         var previous: URL { AppLog.dir.appendingPathComponent(rawValue + ".1.log") }
     }

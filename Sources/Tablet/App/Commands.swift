@@ -64,6 +64,10 @@ enum Commands {
             else if arg == "tilt" { m.island.demoTilt() }
             else if let t = q("title") { m.island.message(t, subtitle: q("text")) }
             else { m.island.message(PenOdometer.milestoneText(PenOdometer.milestones.last { $0 * 1000 <= m.odometer.drawn } ?? 1), subtitle: PenOdometer.pencilUsed(m.odometer.drawn)) }
+        case "trace":   // tablet://trace/20 – log pen events for 20 s (~/Library/Logs/Tablet-pen.log)
+            let secs = Double(arg) ?? 20
+            m.edgeFix.trace(seconds: secs)
+            m.hud.showMessage(symbol: "record.circle", title: L("Záznam pera"), subtitle: String(format: L("%d s – chyťte bod a držte"), Int(secs)))
         case "help":    // tablet://help
             m.showMainWindow(); m.showHelp = true
         case "wake":    // tablet://wake – what happens after the Mac wakes up (for testing)

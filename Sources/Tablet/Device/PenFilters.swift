@@ -18,11 +18,19 @@ final class PenFilters: ObservableObject {
     /// How far (points) and how long (s) the cursor holds still after the tip touches down.
     var calmRadius: Double { [0, 3, 6, 10][min(max(calmTap, 0), 3)] }
     var calmTime: Double { [0, 0.15, 0.25, 0.4][min(max(calmTap, 0), 3)] }
+    /// Cursor stabiliser 0 (off) … 3: removes the sensor's jitter while the pen is still or moves slowly
+    /// (an adaptive "One Euro" filter – strong when slow, almost none on fast strokes, so lines don't lag).
+    @Published var stabilize: Int { didSet { d.set(stabilize, forKey: "pen.stabilize") } }
+    /// Filter settings per level: cutoff at rest (Hz) and how fast it opens up with speed.
+    var stabilizeParams: (minCutoff: Double, beta: Double) {
+        [(0, 0), (3.0, 0.04), (1.5, 0.03), (1.0, 0.02)][min(max(stabilize, 0), 3)]
+    }
     /// Precision mode is active (held ExpressKey or toggled).
     @Published var precisionActive = false
 
     init() {
-        d.register(defaults: ["pen.gamma": 1.0, "pen.maxInput": 1.0, "pen.smoothing": 0.0, "pen.precisionScale": 0.3, "pen.calmTap": 2])
+        d.register(defaults: ["pen.gamma": 1.0, "pen.maxInput": 1.0, "pen.smoothing": 0.0, "pen.precisionScale": 0.3, "pen.calmTap": 2, "pen.stabilize": 1])
+        stabilize = d.integer(forKey: "pen.stabilize")
         calmTap = d.integer(forKey: "pen.calmTap")
         gamma = d.double(forKey: "pen.gamma")
         maxInput = d.double(forKey: "pen.maxInput")

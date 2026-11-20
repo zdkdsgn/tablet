@@ -162,3 +162,39 @@ final class TranslationTests: XCTestCase {
         XCTAssert(missing.isEmpty, "Missing English for:\n" + Set(missing).sorted().joined(separator: "\n"))
     }
 }
+
+/// Cursor stabiliser: jitter of a still pen goes away, a fast stroke keeps up.
+final class StabilizerTests: XCTestCase {
+    /// Deterministic ±0.25 pt noise like the PTH-651 sensor at 200 Hz (measured from a pen trace).
+    private func noise(_ i: Int) -> CGPoint {
+        CGPoint(x: (i % 2 == 0 ? 0.25 : -0.25) * (i % 3 == 0 ? 0.6 : 1), y: (i % 2 == 0 ? -0.22 : 0.22) * (i % 5 == 0 ? 0.5 : 1))
+    }
+
+    func testStillPenStopsShaking() {
+        var f = OneEuro2D()
+        var outs: [CGPoint] = []
+        for i in 0..<400 {
+            outs.append(f.filter(CGPoint(x: 500 + noise(i).x, y: 300 + noise(i).y), dt: 0.005, minCutoff: 3, beta: 0.04))
+        }
+        let tail = outs.suffix(200)
+        let steps = zip(tail, tail.dropFirst()).map { hypot($1.x - $0.x, $1.y - $0.y) }
+        let mean = steps.reduce(0, +) / Double(steps.count)
+        XCTAssertLessThan(mean, 0.05, "raw steps are ~0.4 pt; the filtered cursor should barely move")
+    }
+
+    func testFastStrokeDoesNotLag() {
+        var f = OneEuro2D()
+        var last = CGPoint.zero
+        for i in 0..<200 {   // 1000 pt/s for one second
+            last = f.filter(CGPoint(x: Double(i) * 5, y: 100), dt: 0.005, minCutoff: 3, beta: 0.04)
+        }
+        XCTAssertLessThan(abs(995 - last.x), 6, "a fast stroke should trail by only a few points")
+    }
+
+    func testResetStartsAtTheNewPoint() {
+        var f = OneEuro2D()
+        _ = f.filter(CGPoint(x: 0, y: 0), dt: 0.005, minCutoff: 1, beta: 0.02)
+        f.reset()
+        XCTAssertEqual(f.filter(CGPoint(x: 800, y: 600), dt: 0.005, minCutoff: 1, beta: 0.02), CGPoint(x: 800, y: 600))
+    }
+}
